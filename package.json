@@ -1,5 +1,5 @@
 {
-  "name": "share-state",
+  "name": "shared-state",
   "version": "0.0.1",
   "description": "Binary collections of structs that can be shared and persisted via mmap",
   "main": "index.js",
@@ -10,7 +10,8 @@
     "url": "https://github.com/aeickhoff"
   },
   "dependencies": {
-    "babel-core": "^5.1.10"
+    "babel-core": "^5.1.10",
+    "meta-eval": "*"
   },
   "devDependencies": {
     "tape": "^4.2.1"
@@ -18,7 +19,7 @@
   "scripts": {
     "compile": "babel --blacklist=regenerator -d src/ es6/",
     "prepublish": "npm run compile",
-    "test": "node test.js"
+    "test": "node --harmony test.js | tap-difflet || true"
   },
   "keywords": [],
   "repository": {

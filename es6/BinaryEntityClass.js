@@ -1,3 +1,6 @@
+import BinaryTypes from './BinaryTypes.js';
+import metaEval from 'meta-eval';
+
 export function fromSchema (schema, name) {
 	schema = schema.map(p => [Object.keys(p)[0], p[Object.keys(p)[0]]]);
 	schema.name = schema.name || name;
@@ -29,8 +32,8 @@ exports.theClass = class ${schema.name || "Entity" + lastSchemaId}Proxy {`;
 
 	let constructor = `
 	constructor(offset, buffer) {
-		this._offset = offset || -1;
-		this.id = offset || -1;
+		this._offset = (typeof offset === "undefined") ? -1 : offset;
+		this.id = this._offset;
 		this._buffer = buffer;
 	}
 `;
