@@ -28,7 +28,7 @@ function createProxyClass(schema) {
 exports.theClass = class ${schema.name || "Entity" + lastSchemaId}Proxy {`;
 
 	let sizeInformation = `
-	static binarySize = ${binarySize(schema)};`;
+	static byteSize = ${byteSize(schema)};`;
 
 	let constructor = `
 	constructor(offset, buffer) {
@@ -52,7 +52,7 @@ exports.theClass = class ${schema.name || "Entity" + lastSchemaId}Proxy {`;
 	fieldOffset = 0;
 
 	let copyObject = `
-	static copyObject(object, buffer, offset, existingProxy) {
+	static copyObject(object, offset, buffer, existingProxy) {
 		${schema.map(function([property, type]) {
 			let writeCode = createWriteCall("buffer", type, "object." + property, "offset", fieldOffset);
 			fieldOffset += BinaryTypes.getByteSize(type);
@@ -79,7 +79,7 @@ exports.theClass = class ${schema.name || "Entity" + lastSchemaId}Proxy {`;
 	return proxyClass;
 }
 
-function binarySize(schema) {
+function byteSize(schema) {
 	let totalRecordSize = 0;
 
 	for (let [property, type] of schema) {
@@ -92,48 +92,89 @@ function binarySize(schema) {
 
 function createAccessors(property, type, fieldOffset) {
 	return `
-	get ${property}() {return ${createReadCall("this._buffer", type, "this._offset", fieldOffset)};}
-	set ${property}(${property}) {${createWriteCall("this._buffer", type, property, "this._offset", fieldOffset)};}`;
+	get ${property}() {${createReadCall("return ", "this._buffer", type, "this._offset", fieldOffset)}}
+	set ${property}(${property}) {${createWriteCall("this._buffer", type, property, "this._offset", fieldOffset)}}`;
 }
 
 const VALID_OFFSET = "10E8";
 
-function createReadCall(bufferVariable, type, offsetVariable, fieldOffset) {
+function createReadCall(assignment, bufferVariable, type, offsetVariable, fieldOffset) {
 	if (type.entity) {
-		let entityIdExpression = createReadCall(bufferVariable, "UInt32LE", offsetVariable, fieldOffset);
-		return `(${type.entity}(${entityIdExpression} - ${VALID_OFFSET}))`;
+
+		let rawIdExpr = createReadCall("let id = ", bufferVariable, "UInt32LE", offsetVariable, fieldOffset);
+		return `
+		${rawIdExpr} - ${VALID_OFFSET};
+		${assignment}(${type.entity}(id))
+	`;
+
 	} else if (type.dynamicPacked) {
-		let packedIndexExpression = createReadCall(bufferVariable, "UInt32LE", offsetVariable, fieldOffset);
-		let packedLengthExpression = createReadCall(bufferVariable, "UInt32LE", offsetVariable, fieldOffset + 4);
-		return `${type.dynamicPacked}.unpack(${type.heap}, ${packedIndexExpression} - ${VALID_OFFSET}, ${packedLengthExpression})`
+
+		let packedIndexExpr = createReadCall("let index = ", bufferVariable, "UInt32LE", offsetVariable, fieldOffset);
+		let packedSizeExpr = createReadCall("let size = ", bufferVariable, "UInt32LE", offsetVariable, fieldOffset + 4);
+		let bufferExpr = `let buffer = ${type.heap}.getBuffer(index, size)`;
+		let offsetExpr = `let offset = ${type.heap}.getOffset(index, size)`;
+		let valueExpr = `${type.dynamicPacked}.unpack(buffer, offset, size)`;
+
+		return `
+		let result;
+		${packedIndexExpr};
+
+		if (index > 0) {
+			index -= ${VALID_OFFSET};
+			${packedSizeExpr};
+			${bufferExpr};
+			${offsetExpr};
+			result = ${valueExpr};
+		} else {
+			result = undefined;
+		}
+
+		${assignment}result
+	`;
+
+		//return "\n" + [packedIndexExpr, packedSizeExpr, bufferExpr, offsetExpr, resultExpr].map(l => "\t\t" + l).join(";\n") + "\n\t";
+
 	} else if (type.enum) {
-		let indexExpression = createReadCall(bufferVariable, "UInt8", offsetVariable, fieldOffset);
-		return `${JSON.stringify(type.enum)}[${indexExpression}]`;
+
+		return `
+		${createReadCall("let index = ", bufferVariable, "UInt8", offsetVariable, fieldOffset)};
+		${assignment}${JSON.stringify(type.enum)}[index]
+	`;
+
 	} else if (type === "Bool") {
-		return `!!${bufferVariable}.readUInt8(${offsetVariable} + ${fieldOffset}, true)`;
+
+		return `${assignment}!!${bufferVariable}.readUInt8(${offsetVariable} + ${fieldOffset}, true)`;
+
 	} else {
-		return `${bufferVariable}.read${type}(${offsetVariable} + ${fieldOffset}, true)`;
+
+		return `${assignment}${bufferVariable}.read${type}(${offsetVariable} + ${fieldOffset}, true)`;
+
 	}
 }
 
 function createWriteCall(bufferVariable, type, variableToBeWritten, offsetVariable, fieldOffset) {
 	if (type.entity) {
-		return createWriteCall(bufferVariable, "UInt32LE", `(${variableToBeWritten} ? ${variableToBeWritten}.id + ${VALID_OFFSET} : 0)`, offsetVariable, fieldOffset);
-	} else if (type.dynamicPacked) {
-		let packedIndexExpression = createReadCall(bufferVariable, "UInt32LE", offsetVariable, fieldOffset);
-		let packedLengthExpression = createReadCall(bufferVariable, "UInt32LE", offsetVariable, fieldOffset + 4);
-		return `
 
-		if (${packedIndexExpression} > 0) {
-			${type.heap}.free(${packedIndexExpression} - ${VALID_OFFSET}, ${packedLengthExpression});
+		return createWriteCall(bufferVariable, "UInt32LE", `(${variableToBeWritten} ? ${variableToBeWritten}.id + ${VALID_OFFSET} : 0)`, offsetVariable, fieldOffset);
+
+	} else if (type.dynamicPacked) {
+
+		let packedIndexExpr = createReadCall("let oldIndex = ", bufferVariable, "UInt32LE", offsetVariable, fieldOffset);
+		let packedLengthExpr = createReadCall("let oldSize = ", bufferVariable, "UInt32LE", offsetVariable, fieldOffset + 4);
+		return `
+		${packedIndexExpr};
+
+		if (oldIndex > 0) {
+			${packedLengthExpr};
+			${type.heap}.free(oldIndex - ${VALID_OFFSET}, oldSize);
 		}
 
 		let packedSize = ${type.dynamicPacked}.packedSize(${variableToBeWritten});
 
 		if (packedSize > 0) {
 			let packedIndex = ${type.heap}.allocate(packedSize);
-			let packedBuffer = ${type.heap}.getFileBuffer(packedIndex, packedSize);
-			let packedOffset = ${type.heap}.getFileOffset(packedIndex, packedSize);
+			let packedBuffer = ${type.heap}.getBuffer(packedIndex, packedSize);
+			let packedOffset = ${type.heap}.getOffset(packedIndex, packedSize);
 			${type.dynamicPacked}.pack(${variableToBeWritten}, packedBuffer, packedOffset);
 			${createWriteCall(bufferVariable, "UInt32LE", `packedIndex + ${VALID_OFFSET}`, offsetVariable, fieldOffset)};
 			${createWriteCall(bufferVariable, "UInt32LE", "packedSize", offsetVariable, fieldOffset + 4)};
@@ -141,11 +182,18 @@ function createWriteCall(bufferVariable, type, variableToBeWritten, offsetVariab
 			${createWriteCall(bufferVariable, "UInt32LE", "0", offsetVariable, fieldOffset)};
 		}
 	`;
+
 	} else if (type.enum) {
+
 		return createWriteCall(bufferVariable, "UInt8", `${JSON.stringify(type.enum)}.indexOf(${variableToBeWritten})`, offsetVariable, fieldOffset);
+
 	} else if (type === "Bool") {
+
 		return createWriteCall(bufferVariable, "UInt8", `${variableToBeWritten} ? 1 : 0`, offsetVariable, fieldOffset);
+
 	} else {
+
 		return `${bufferVariable}.write${type}(${variableToBeWritten}, ${offsetVariable} + ${fieldOffset}, true)`;
+
 	}
 }

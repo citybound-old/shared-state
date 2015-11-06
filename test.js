@@ -19,7 +19,7 @@ test('Binary collections of structs that can be shared and persisted via mmap', 
 		});
 
 		t.test('which should have a record size of 3 bytes', function (t) {
-			t.equal(ProxyClass.binarySize, 3);
+			t.equal(ProxyClass.byteSize, 3);
 			t.end();
 		});
 
@@ -27,7 +27,7 @@ test('Binary collections of structs that can be shared and persisted via mmap', 
 		var buffer;
 
 		t.test('given a new buffer, properties should be initialized to "zero"', function (t) {
-			buffer = new Buffer(ProxyClass.binarySize);
+			buffer = new Buffer(ProxyClass.byteSize);
 			buffer.fill(0);
 			entity = new ProxyClass(0, buffer);
 
@@ -50,12 +50,12 @@ test('Binary collections of structs that can be shared and persisted via mmap', 
 			t.end();
 		});
 
-		t.test('properties should writeable as a whole object', function (t) {
+		t.test('properties should be writeable as a whole object', function (t) {
 			ProxyClass.copyObject({
 				number: 13,
 				flag: false,
 				color: "green"
-			}, buffer, 0);
+			}, 0, buffer);
 
 			t.equal(entity.number, 13);
 			t.equal(entity.flag, false);
@@ -67,7 +67,7 @@ test('Binary collections of structs that can be shared and persisted via mmap', 
 
 	t.test('A schema with a reference to another entity', function (t) {
 
-		global.otherEntityGetter = (id) => id;
+		global.otherEntityGetter = function (id) {return {id: id};};
 
 		var schema = [
 			{dummy: "UInt8"},
@@ -81,6 +81,82 @@ test('Binary collections of structs that can be shared and persisted via mmap', 
 			t.end();
 		});
 
+		var buffer;
+		var entity;
 
+		t.test('should call the finder function with a negative id if no entity was set', function (t) {
+			buffer = new Buffer(ProxyClass.byteSize);
+			buffer.fill(0);
+			entity = new ProxyClass(0, buffer);
+
+			t.assert(entity.other.id < 0, "should be negative");
+			t.end();
+		});
+
+		t.test('should save the id of an entity if it is set', function (t) {
+			entity.other = {id: 42, dummy: "bla"};
+			t.equal(entity.other.id, 42);
+			t.end();
+		});
+
+		t.test('should save the id of an entity if it is set as part of a whole object', function (t) {
+			ProxyClass.copyObject({
+				dummy: 5,
+				other: {id: 37}
+			}, 0, buffer);
+			t.equal(entity.other.id, 37);
+			t.end();
+		});
+
+		t.test('should return a negative number again after setting the entity to undefined', function (t) {
+			entity.other = undefined;
+			t.assert(entity.other.id < 0, "should be negative");
+			t.end();
+		});
+	});
+
+	t.test("given a heap and a packable class, entities should support packed properties of dynamic size", function (t) {
+		global.PackableClass = {
+			packedSize: function (arr) {return arr.length},
+			pack: function (arr, buffer, offset) {
+				for (var item of arr) {
+					buffer.writeUInt8(item, offset);
+					offset++;
+				}
+			},
+			unpack: function (buffer, offset, length) {
+				var result = new Array(length);
+
+				for (var i = 0; i < length; i++) {
+					result[i] = buffer.readUInt8(offset + i);
+				}
+
+				return result;
+			}
+		};
+
+		var schema = [
+			{dummy: "UInt8"},
+			{intList: {dynamicPacked: "PackableClass", heap: "intListHeap"}}
+		];
+
+		t.test('should compile into a ProxyClass', function (t) {
+			ProxyClass = sharedState.BinaryEntityClass.fromSchema(schema, 'Test');
+			t.end();
+		});
+
+		var buffer;
+		var entity;
+		global.intListHeap = new sharedState.Heap(sharedState.RecordBuffer);
+
+		t.test('should pack and unpack properly given a heap', function (t) {
+			buffer = new Buffer(ProxyClass.byteSize);
+			buffer.fill(0);
+			entity = new ProxyClass(0, buffer);
+			entity.intList = [0, 1, 2, 3, 17];
+
+			t.deepEqual(entity.intList, [0, 1, 2, 3, 17]);
+			t.end();
+		});
 	});
 });
