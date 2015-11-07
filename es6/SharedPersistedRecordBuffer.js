@@ -1,6 +1,6 @@
 import RecordBuffer from './RecordBuffer.js';
 import fs from 'fs';
-import mmapio from 'mmap-io'
+//import mmapio from 'mmap-io'
 
 export default class SharedPersistedRecordBuffer extends RecordBuffer {
 	constructor (recordSize, fileName) {

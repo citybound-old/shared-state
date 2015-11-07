@@ -20,13 +20,13 @@ export default class RecordBuffer {
 			? index + 1
 			: nextIndexInfo - 1;
 		buffer.fill(0, offset, offset + this.recordSize - 2);
-		this.getBuffer(index).writeUInt8(this.getOffset(index) + this.recordSize - 1, 1); // set alloc.
+		this.getBuffer(index).writeUInt8(1, this.getOffset(index) + this.recordSize - 1); // set alloc.
 		return index;
 	}
 
 	free (index) {
-		this.getBuffer(index).writeUInt32LE(this.getOffset(index), index + 1);
-		this.getBuffer(index).writeUInt8(this.getOffset(index) + this.recordSize - 1, 0); // set free
+		this.getBuffer(index).writeUInt32LE(index + 1, this.getOffset(index));
+		this.getBuffer(index).writeUInt8(0, this.getOffset(index) + this.recordSize - 1); // set free
 	}
 
 	* allocatedIndices () {

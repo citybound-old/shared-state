@@ -119,8 +119,8 @@ test('Binary collections of structs that can be shared and persisted via mmap', 
 		global.PackableClass = {
 			packedSize: function (arr) {return arr.length},
 			pack: function (arr, buffer, offset) {
-				for (var item of arr) {
-					buffer.writeUInt8(item, offset);
+				for (var i = 0; i < arr.length; i++) {
+					buffer.writeUInt8(arr[i], offset);
 					offset++;
 				}
 			},
