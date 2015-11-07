@@ -1,5 +1,5 @@
 var sharedState = require('./');
-var test = require('tape');
+var test = require('tape-catch');
 
 test('Binary collections of structs that can be shared and persisted via mmap', function(t) {
 
@@ -14,7 +14,7 @@ test('Binary collections of structs that can be shared and persisted via mmap', 
 		var ProxyClass;
 
 		t.test('should compile into a ProxyClass', function (t) {
-			ProxyClass = sharedState.BinaryEntityClass.fromSchema(schema, 'Test');
+			ProxyClass = sharedState.BinaryEntityClass.fromSchema(schema, 'Simple');
 			t.end();
 		});
 
@@ -77,7 +77,7 @@ test('Binary collections of structs that can be shared and persisted via mmap', 
 		var ProxyClass;
 
 		t.test('should compile into a ProxyClass', function (t) {
-			ProxyClass = sharedState.BinaryEntityClass.fromSchema(schema, 'Test');
+			ProxyClass = sharedState.BinaryEntityClass.fromSchema(schema, 'Reference');
 			t.end();
 		});
 
@@ -141,7 +141,7 @@ test('Binary collections of structs that can be shared and persisted via mmap', 
 		];
 
 		t.test('should compile into a ProxyClass', function (t) {
-			ProxyClass = sharedState.BinaryEntityClass.fromSchema(schema, 'Test');
+			ProxyClass = sharedState.BinaryEntityClass.fromSchema(schema, 'DynamicPacked');
 			t.end();
 		});
 
@@ -158,5 +158,63 @@ test('Binary collections of structs that can be shared and persisted via mmap', 
 			t.deepEqual(entity.intList, [0, 1, 2, 3, 17]);
 			t.end();
 		});
+	});
+
+	t.test("should support vector properties", function (t) {
+
+		var schema = [
+			{position: {vector: 3, of: "FloatLE"}},
+			{colorCombo: {vector: 2, of: {enum: ["red", "green", "blue"]}}}
+		];
+
+		var ProxyClass;
+
+		t.test('should compile into a ProxyClass', function (t) {
+			ProxyClass = sharedState.BinaryEntityClass.fromSchema(schema, 'Reference');
+			t.end();
+		});
+
+		t.test('which should have a record size of 14 bytes', function (t) {
+			t.equal(ProxyClass.byteSize, 14);
+			t.end();
+		});
+
+		var entity;
+		var buffer;
+
+		t.test('given a new buffer, properties should be initialized to "zero"', function (t) {
+			buffer = new Buffer(ProxyClass.byteSize);
+			buffer.fill(0);
+			entity = new ProxyClass(0, buffer);
+
+			t.deepEqual(entity.position, [0, 0, 0]);
+			t.deepEqual(entity.colorCombo, ["red", "red"]);
+
+			t.end();
+		});
+
+		t.test('vector properties should be readable and writeable', function (t) {
+			entity.position = [0.25, 0.75, -0.25]; // these values should encode exactly as floats
+			entity.colorCombo = ["blue", "red"];
+
+			t.deepEqual(entity.position, [0.25, 0.75, -0.25]);
+			t.deepEqual(entity.colorCombo, ["blue", "red"]);
+
+			t.end();
+		});
+		//
+		t.test('vector properties should be writeable as a whole object', function (t) {
+			ProxyClass.copyObject({
+				position: [0.25, 0.75, -0.25], // these values should encode exactly as floats
+				colorCombo: ["blue", "red"]
+			}, 0, buffer);
+
+			t.deepEqual(entity.position, [0.25, 0.75, -0.25]);
+			t.deepEqual(entity.colorCombo, ["blue", "red"]);
+
+			t.end();
+		});
+
+		t.end();
 	});
 });

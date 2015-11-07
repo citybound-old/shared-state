@@ -99,7 +99,22 @@ function createAccessors(property, type, fieldOffset) {
 const VALID_OFFSET = "10E8";
 
 function createReadCall(assignment, bufferVariable, type, offsetVariable, fieldOffset) {
-	if (type.entity) {
+	if (type.vector) {
+
+		let length = type.vector;
+		let itemSize = BinaryTypes.getByteSize(type.of);
+
+		return `
+		let vector = new Array(${length});
+
+		for (let i = 0, iOffset = 0; i < ${length}; i++, iOffset += ${itemSize}) {
+			${createReadCall("vector[i] = ", bufferVariable, type.of, offsetVariable, fieldOffset + " + iOffset")}
+		}
+
+		${assignment}vector;
+	`
+
+	} else if (type.entity) {
 
 		let rawIdExpr = createReadCall("let id = ", bufferVariable, "UInt32LE", offsetVariable, fieldOffset);
 		return `
@@ -132,8 +147,6 @@ function createReadCall(assignment, bufferVariable, type, offsetVariable, fieldO
 		${assignment}result
 	`;
 
-		//return "\n" + [packedIndexExpr, packedSizeExpr, bufferExpr, offsetExpr, resultExpr].map(l => "\t\t" + l).join(";\n") + "\n\t";
-
 	} else if (type.enum) {
 
 		return `
@@ -153,7 +166,19 @@ function createReadCall(assignment, bufferVariable, type, offsetVariable, fieldO
 }
 
 function createWriteCall(bufferVariable, type, variableToBeWritten, offsetVariable, fieldOffset) {
-	if (type.entity) {
+	if (type.vector) {
+
+		let length = type.vector;
+		let itemSize = BinaryTypes.getByteSize(type.of);
+
+		return `
+
+		for (let i = 0, iOffset = 0; i < ${length}; i++, iOffset += ${itemSize}) {
+			${createWriteCall(bufferVariable, type.of, variableToBeWritten + "[i]", offsetVariable, fieldOffset + " + iOffset")}
+		}
+	`
+
+	} else if (type.entity) {
 
 		return createWriteCall(bufferVariable, "UInt32LE", `(${variableToBeWritten} ? ${variableToBeWritten}.id + ${VALID_OFFSET} : 0)`, offsetVariable, fieldOffset);
 

@@ -4,6 +4,7 @@ let BinaryTypes = {
 		if (typeString.entity) return 4;
 		if (typeString.enum) return 1;
 		if (typeString.dynamicPacked) return 8;
+		if (typeString.vector) return typeString.vector * BinaryTypes.getByteSize(typeString.of);
 		if (typeString === "Bool") return 1;
 		if (typeString === "FloatLE" || typeString === "FloatBE") return 4;
 		if (typeString === "DoubleLE" || typeString === "DoubleBE") return 8;
