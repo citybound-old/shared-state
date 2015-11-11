@@ -68,7 +68,7 @@ console.log(entity2.number, entity2.flag, entity2.color);
 
 More advanced examples coming soon...
 
-For more examples, also see [test.js](http://github.com/aeickhoff/nd-linalg/blob/master/test.js).
+For more examples, also see [test.js](http://github.com/citybound/shared-state/blob/master/test.js).
 
 ## Contribution
 
@@ -77,4 +77,4 @@ Your help is highly welcome! :)
 
 ## License
 
-MIT, see [LICENSE.md](http://github.com/aeickhoff/nd-linalg/blob/master/LICENSE.md) for details.
+MIT, see [LICENSE.md](http://github.com/citybound/shared-state/blob/master/LICENSE.md) for details.
