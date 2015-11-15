@@ -15,7 +15,9 @@
     "mmap-io": "^0.9.4"
   },
   "devDependencies": {
-    "tape-catch": "^1.0.4"
+    "tape-catch": "^1.0.4",
+    "tap-difflet": "^0.4.0",
+    "tape": "^4.2.2"
   },
   "scripts": {
     "compile": "babel --blacklist=regenerator -d src/ es6/",
