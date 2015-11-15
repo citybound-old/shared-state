@@ -248,11 +248,10 @@ test('Binary collections of structs that can be shared and persisted via mmap', 
 			buffer.fill(0);
 
 			entity = new ProxyClass(0, buffer);
-			t.deepEqual(entity.resources, {
-				money: 0,
-				time: 0,
-				coffee: 0
-			});
+
+			t.equal(entity.resources.money, 0);
+			t.equal(entity.resources.time, 0);
+			t.equal(entity.resources.coffee, 0);
 
 			t.end();
 		});
@@ -264,11 +263,9 @@ test('Binary collections of structs that can be shared and persisted via mmap', 
 				time: -7
 			};
 
-			t.deepEqual(entity.resources, {
-				money: 10000,
-				coffee: 500,
-				time: -7
-			});
+			t.equal(entity.resources.money, 10000);
+			t.equal(entity.resources.coffee, 500);
+			t.equal(entity.resources.time, -7);
 
 			t.end();
 		});

@@ -25,6 +25,10 @@ function createProxyClass(schema) {
 
 	let fieldOffset = 0;
 
+	let proxyHelpers = schema.map(
+		([property, type]) => createProxyHelper(property, type)
+	).filter(l => l).join("\n");
+
 	let header = `
 exports.theClass = class ${schema.name || "Entity" + lastSchemaId}Proxy {`;
 
@@ -62,7 +66,7 @@ exports.theClass = class ${schema.name || "Entity" + lastSchemaId}Proxy {`;
 	}
 `;
 
-	let proxyClassCode = header + sizeInformation + constructor + members + copyObject + footer;
+	let proxyClassCode = proxyHelpers + header + sizeInformation + constructor + members + copyObject + footer;
 
 	console.log(proxyClassCode);
 
@@ -93,13 +97,13 @@ function byteSize(schema) {
 
 function createAccessors(property, type, fieldOffset) {
 	return `
-	get ${property}() {${createReadCall("return ", "this._buffer", type, "this._offset", fieldOffset)}}
+	get ${property}() {${createReadCall("return ", "this._buffer", type, "this._offset", fieldOffset, property)}}
 	set ${property}(${property}) {${createWriteCall("this._buffer", type, property, "this._offset", fieldOffset)}}`;
 }
 
 const VALID_OFFSET = "10E8";
 
-function createReadCall(assignment, bufferVariable, type, offsetVariable, fieldOffset) {
+function createReadCall(assignment, bufferVariable, type, offsetVariable, fieldOffset, propertyAlias) {
 	if (type.vector) {
 
 		let length = type.vector;
@@ -157,21 +161,28 @@ function createReadCall(assignment, bufferVariable, type, offsetVariable, fieldO
 
 	} else if (type.staticDictionary) {
 
-		let helperVars = [];
-		let valueType = type.staticDictionary.values;
-		let valueSize = BinaryTypes.getByteSize(valueType);
-		let keyOffset = 0;
+		return `
+			let proxyHelper = ${propertyAlias}Helper;
+			proxyHelper._buffer = ${bufferVariable};
+			proxyHelper._offset = ${offsetVariable} + ${fieldOffset};
+			${assignment}proxyHelper;
+		`;
 
-		for (var key of type.staticDictionary.keys) {
-			helperVars.push(createReadCall("\t\tvar " + key + " = ", bufferVariable, valueType, offsetVariable, fieldOffset + keyOffset));
-			keyOffset += valueSize;
-		}
-
-		let objectLiteral = "{\n" + type.staticDictionary.keys.map(
-			(key) => "\t\t\t" + key + ": " + key
-		).join(",\n") + "\n\t\t}\n\t";
-
-		return "\n" + helperVars.join(";\n") + ";\n\n\t\t" + assignment + objectLiteral;
+		//let helperVars = [];
+		//let valueType = type.staticDictionary.values;
+		//let valueSize = BinaryTypes.getByteSize(valueType);
+		//let keyOffset = 0;
+		//
+		//for (var key of type.staticDictionary.keys) {
+		//	helperVars.push(createReadCall("\t\tvar " + key + " = ", bufferVariable, valueType, offsetVariable, fieldOffset + keyOffset));
+		//	keyOffset += valueSize;
+		//}
+		//
+		//let objectLiteral = "{\n" + type.staticDictionary.keys.map(
+		//	(key) => "\t\t\t" + key + ": " + key
+		//).join(",\n") + "\n\t\t}\n\t";
+		//
+		//return "\n" + helperVars.join(";\n") + ";\n\n\t\t" + assignment + objectLiteral;
 
 	} else if (type === "Bool") {
 
@@ -261,3 +272,23 @@ function createWriteCall(bufferVariable, type, inputVariable, offsetVariable, fi
 
 	}
 }
+
+function createProxyHelper (property, type) {
+	if (type.staticDictionary) {
+		var valueType = type.staticDictionary.values;
+		var valueSize = BinaryTypes.getByteSize(valueType);
+
+		return `
+const ${property}Helper = {
+	_buffer: null,
+	_offset: 0,
+	${type.staticDictionary.keys.map((key, i) => `
+	get ${key} () {${createReadCall("return ", "this._buffer", valueType, "this._offset", i * valueSize)}},
+	set ${key} (value) {${createWriteCall("this._buffer", valueType, "value", "this._offset", i * valueSize)}}`
+	).join(",\n")}
+}`
+	}
+}
+
+// (assignment, bufferVariable, type, offsetVariable, fieldOffset)
+// (bufferVariable, type, inputVariable, offsetVariable, fieldOffset)
