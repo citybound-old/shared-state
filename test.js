@@ -220,62 +220,113 @@ test('Binary collections of structs that can be shared and persisted via mmap', 
 
 	t.test("should support dictionary-type properties", function (t) {
 
-		var schema = [
-			{age: "UInt8"},
-			{resources: {staticDictionary: {
-				keys: ["money", "time", "coffee"],
-				values: "FloatLE"
-			}}}
-		];
+		t.test("(I) static dictionaries", function (t) {
 
-		var ProxyClass;
+			var schema = [
+				{age: "UInt8"},
+				{
+					resources: {
+						staticDictionary: {
+							keys: ["money", "time", "coffee"],
+							values: "FloatLE"
+						}
+					}
+				}
+			];
 
-		t.test("Should compile into a ProxyClass", function (t) {
-			ProxyClass = sharedState.BinaryEntityClass.fromSchema(schema);
+			var ProxyClass;
+
+			t.test("Should compile into a ProxyClass", function (t) {
+				ProxyClass = sharedState.BinaryEntityClass.fromSchema(schema);
+				t.end();
+			});
+
+			t.test("Should have a record size of 13 bytes", function (t) {
+				t.equal(ProxyClass.byteSize, 13);
+				t.end();
+			});
+
+			var entity;
+			var buffer;
+
+			t.test('given a new buffer, properties should be initialized to "zero"', function (t) {
+				buffer = new Buffer(ProxyClass.byteSize);
+				buffer.fill(0);
+
+				entity = new ProxyClass(0, buffer);
+
+				t.equal(entity.resources.money, 0);
+				t.equal(entity.resources.time, 0);
+				t.equal(entity.resources.coffee, 0);
+
+				t.end();
+			});
+
+			t.test('should support completely replacing the dictionary and then reading correct values', function (t) {
+				entity.resources = {
+					money: 10000,
+					coffee: 500,
+					time: -7
+				};
+
+				t.equal(entity.resources.money, 10000);
+				t.equal(entity.resources.coffee, 500);
+				t.equal(entity.resources.time, -7);
+
+				t.end();
+			});
+
+			t.test('should allow to set individual key/value pairs', function (t) {
+				entity.resources.coffee = 1000;
+
+				t.equal(entity.resources.coffee, 1000);
+				t.end();
+			});
+
 			t.end();
+
 		});
 
-		t.test("Should have a record size of 13 bytes", function (t) {
-			t.equal(ProxyClass.byteSize, 13);
-			t.end();
-		});
+		t.test("(II) dynamic dictionaries", function (t) {
 
-		var entity;
-		var buffer;
+			var schema = [
+				{dummy: "UInt8"},
+				{resources: {dynamicDictionary: {
+					keys: ["age", "freetime", "stress", "hunger", "thirst", "health", "edges", "eyes", "pylons", "smell", "relativePinkness"],
+					values: "FloatLE"
+				}}}
+			];
 
-		t.test('given a new buffer, properties should be initialized to "zero"', function (t) {
-			buffer = new Buffer(ProxyClass.byteSize);
-			buffer.fill(0);
+			var ProxyClass;
 
-			entity = new ProxyClass(0, buffer);
+			t.test("should compile into a proxy class", function (t) {
+				ProxyClass = sharedState.BinaryEntityClass.fromSchema(schema);
+				t.end();
+			});
 
-			t.equal(entity.resources.money, 0);
-			t.equal(entity.resources.time, 0);
-			t.equal(entity.resources.coffee, 0);
+			var entity;
+			var buffer;
 
-			t.end();
-		});
+			t.test("should return a default value for any possible key after initialization", function (t) {
+				buffer = new Buffer(ProxyClass.byteSize);
+				entity = new ProxyClass(0, buffer);
 
-		t.test('should support completely replacing the dictionary and then reading correct values', function (t) {
-			entity.resources = {
-				money: 10000,
-				coffee: 500,
-				time: -7
-			};
+				t.equal(entity.resources.freetime, 0);
+				t.equal(entity.resources.edges, 0);
+				t.equal(entity.resources.pylons, 0);
+				t.equal(entity.resources.relativePinkness, 0);
+				t.end();
+			});
 
-			t.equal(entity.resources.money, 10000);
-			t.equal(entity.resources.coffee, 500);
-			t.equal(entity.resources.time, -7);
+			t.test("should support writing and reading to individual keys", function (t) {
+				entity.resources.hunger = 1000;
+				entity.resources.eyes = 3;
+				entity.resources.relativePinkness = -35.4;
+			});
 
-			t.end();
-		});
-
-		t.test('should allow to set individual key/value pairs', function (t) {
-			entity.resources.coffee = 1000;
-
-			t.equal(entity.resources.coffee, 1000);
-			t.end();
 		});
 
 	});
+
+
 });
