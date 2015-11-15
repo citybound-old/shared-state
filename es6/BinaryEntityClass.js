@@ -289,6 +289,3 @@ const ${property}Helper = {
 }`
 	}
 }
-
-// (assignment, bufferVariable, type, offsetVariable, fieldOffset)
-// (bufferVariable, type, inputVariable, offsetVariable, fieldOffset)
