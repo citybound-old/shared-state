@@ -12,7 +12,8 @@ export function fromSchema (schema, name) {
 function validateSchema(schema) {
 	for (let [property, type] of schema) {
 		if (!Buffer.prototype["read" + type]
-		&& !type.entity && !type.dynamicPacked && !type.fixedPacked && !type.vector && !type.array && !type.enum && type !== "Bool")
+		&& !type.entity && !type.dynamicPacked && !type.fixedPacked && !type.vector
+		&& !type.array && !type.enum && !type.staticDictionary && type !== "Bool")
 			throw "Unknown binary type " + JSON.stringify(type);
 	}
 }
@@ -154,6 +155,24 @@ function createReadCall(assignment, bufferVariable, type, offsetVariable, fieldO
 		${assignment}${JSON.stringify(type.enum)}[index]
 	`;
 
+	} else if (type.staticDictionary) {
+
+		let helperVars = [];
+		let valueType = type.staticDictionary.values;
+		let valueSize = BinaryTypes.getByteSize(valueType);
+		let keyOffset = 0;
+
+		for (var key of type.staticDictionary.keys) {
+			helperVars.push(createReadCall("\t\tvar " + key + " = ", bufferVariable, valueType, offsetVariable, fieldOffset + keyOffset));
+			keyOffset += valueSize;
+		}
+
+		let objectLiteral = "{\n" + type.staticDictionary.keys.map(
+			(key) => "\t\t\t" + key + ": " + key
+		).join(",\n") + "\n\t\t}\n\t";
+
+		return "\n" + helperVars.join(";\n") + ";\n\n\t\t" + assignment + objectLiteral;
+
 	} else if (type === "Bool") {
 
 		return `${assignment}!!${bufferVariable}.readUInt8(${offsetVariable} + ${fieldOffset}, true)`;
@@ -165,7 +184,7 @@ function createReadCall(assignment, bufferVariable, type, offsetVariable, fieldO
 	}
 }
 
-function createWriteCall(bufferVariable, type, variableToBeWritten, offsetVariable, fieldOffset) {
+function createWriteCall(bufferVariable, type, inputVariable, offsetVariable, fieldOffset) {
 	if (type.vector) {
 
 		let length = type.vector;
@@ -174,13 +193,13 @@ function createWriteCall(bufferVariable, type, variableToBeWritten, offsetVariab
 		return `
 
 		for (let i = 0, iOffset = 0; i < ${length}; i++, iOffset += ${itemSize}) {
-			${createWriteCall(bufferVariable, type.of, variableToBeWritten + "[i]", offsetVariable, fieldOffset + " + iOffset")}
+			${createWriteCall(bufferVariable, type.of, inputVariable + "[i]", offsetVariable, fieldOffset + " + iOffset")}
 		}
 	`
 
 	} else if (type.entity) {
 
-		return createWriteCall(bufferVariable, "UInt32LE", `(${variableToBeWritten} ? ${variableToBeWritten}.id + ${VALID_OFFSET} : 0)`, offsetVariable, fieldOffset);
+		return createWriteCall(bufferVariable, "UInt32LE", `(${inputVariable} ? ${inputVariable}.id + ${VALID_OFFSET} : 0)`, offsetVariable, fieldOffset);
 
 	} else if (type.dynamicPacked) {
 
@@ -194,13 +213,13 @@ function createWriteCall(bufferVariable, type, variableToBeWritten, offsetVariab
 			${type.heap}.free(oldIndex - ${VALID_OFFSET}, oldSize);
 		}
 
-		let packedSize = ${type.dynamicPacked}.packedSize(${variableToBeWritten});
+		let packedSize = ${type.dynamicPacked}.packedSize(${inputVariable});
 
 		if (packedSize > 0) {
 			let packedIndex = ${type.heap}.allocate(packedSize);
 			let packedBuffer = ${type.heap}.getBuffer(packedIndex, packedSize);
 			let packedOffset = ${type.heap}.getOffset(packedIndex, packedSize);
-			${type.dynamicPacked}.pack(${variableToBeWritten}, packedBuffer, packedOffset);
+			${type.dynamicPacked}.pack(${inputVariable}, packedBuffer, packedOffset);
 			${createWriteCall(bufferVariable, "UInt32LE", `packedIndex + ${VALID_OFFSET}`, offsetVariable, fieldOffset)};
 			${createWriteCall(bufferVariable, "UInt32LE", "packedSize", offsetVariable, fieldOffset + 4)};
 		} else {
@@ -210,15 +229,35 @@ function createWriteCall(bufferVariable, type, variableToBeWritten, offsetVariab
 
 	} else if (type.enum) {
 
-		return createWriteCall(bufferVariable, "UInt8", `${JSON.stringify(type.enum)}.indexOf(${variableToBeWritten})`, offsetVariable, fieldOffset);
+		return createWriteCall(bufferVariable, "UInt8", `${JSON.stringify(type.enum)}.indexOf(${inputVariable})`, offsetVariable, fieldOffset);
+
+	} else if (type.staticDictionary) {
+
+		let keys = type.staticDictionary.keys;
+		let valueSize = BinaryTypes.getByteSize(type.staticDictionary.values);
+
+		let propertyWriteCalls = "";
+
+		for (let i = 0, propertyOffset = 0; i < keys.length; i++, propertyOffset += valueSize) {
+			propertyWriteCalls += createWriteCall(
+				bufferVariable,
+				type.staticDictionary.values,
+				inputVariable + "." + keys[i],
+				offsetVariable,
+				fieldOffset + propertyOffset
+			);
+			propertyWriteCalls += ";\n";
+		}
+
+		return propertyWriteCalls;
 
 	} else if (type === "Bool") {
 
-		return createWriteCall(bufferVariable, "UInt8", `${variableToBeWritten} ? 1 : 0`, offsetVariable, fieldOffset);
+		return createWriteCall(bufferVariable, "UInt8", `${inputVariable} ? 1 : 0`, offsetVariable, fieldOffset);
 
 	} else {
 
-		return `${bufferVariable}.write${type}(${variableToBeWritten}, ${offsetVariable} + ${fieldOffset}, true)`;
+		return `${bufferVariable}.write${type}(${inputVariable}, ${offsetVariable} + ${fieldOffset}, true)`;
 
 	}
 }

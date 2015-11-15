@@ -217,4 +217,68 @@ test('Binary collections of structs that can be shared and persisted via mmap', 
 
 		t.end();
 	});
+
+	t.test("should support dictionary-type properties", function (t) {
+
+		var schema = [
+			{age: "UInt8"},
+			{resources: {staticDictionary: {
+				keys: ["money", "time", "coffee"],
+				values: "FloatLE"
+			}}}
+		];
+
+		var ProxyClass;
+
+		t.test("Should compile into a ProxyClass", function (t) {
+			ProxyClass = sharedState.BinaryEntityClass.fromSchema(schema);
+			t.end();
+		});
+
+		t.test("Should have a record size of 13 bytes", function (t) {
+			t.equal(ProxyClass.byteSize, 13);
+			t.end();
+		});
+
+		var entity;
+		var buffer;
+
+		t.test('given a new buffer, properties should be initialized to "zero"', function (t) {
+			buffer = new Buffer(ProxyClass.byteSize);
+			buffer.fill(0);
+
+			entity = new ProxyClass(0, buffer);
+			t.deepEqual(entity.resources, {
+				money: 0,
+				time: 0,
+				coffee: 0
+			});
+
+			t.end();
+		});
+
+		t.test('should support completely replacing the dictionary and then reading correct values', function (t) {
+			entity.resources = {
+				money: 10000,
+				coffee: 500,
+				time: -7
+			};
+
+			t.deepEqual(entity.resources, {
+				money: 10000,
+				coffee: 500,
+				time: -7
+			});
+
+			t.end();
+		});
+
+		t.test('should allow to set individual key/value pairs', function (t) {
+			entity.resources.coffee = 1000;
+
+			t.equal(entity.resources.coffee, 1000);
+			t.end();
+		});
+
+	});
 });
