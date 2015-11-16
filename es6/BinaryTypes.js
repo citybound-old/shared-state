@@ -5,9 +5,9 @@ let BinaryTypes = {
 		if (typeString.enum) return 1;
 		if (typeString.dynamicPacked) return 8;
 		if (typeString.vector) return typeString.vector * BinaryTypes.getByteSize(typeString.of);
-		if (typeString.staticDictionary) {
-			let nKeys = typeString.staticDictionary.keys.length;
-			let valueType = typeString.staticDictionary.values;
+		if (typeString.staticMap) {
+			let nKeys = typeString.staticMap.keys.length;
+			let valueType = typeString.staticMap.values;
 			return nKeys * BinaryTypes.getByteSize(valueType);
 		}
 		if (typeString === "Bool") return 1;

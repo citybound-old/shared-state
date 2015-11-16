@@ -220,13 +220,13 @@ test('Binary collections of structs that can be shared and persisted via mmap', 
 
 	t.test("should support dictionary-type properties", function (t) {
 
-		t.test("(I) static dictionaries", function (t) {
+		t.test("(I) static maps", function (t) {
 
 			var schema = [
 				{age: "UInt8"},
 				{
 					resources: {
-						staticDictionary: {
+						staticMap: {
 							keys: ["money", "time", "coffee"],
 							values: "FloatLE"
 						}
@@ -287,11 +287,11 @@ test('Binary collections of structs that can be shared and persisted via mmap', 
 
 		});
 
-		t.test("(II) dynamic dictionaries", function (t) {
+		t.test("(II) dynamic maps", function (t) {
 
 			var schema = [
 				{dummy: "UInt8"},
-				{resources: {dynamicDictionary: {
+				{resources: {dynamicMap: {
 					keys: ["age", "freetime", "stress", "hunger", "thirst", "health", "edges", "eyes", "pylons", "smell", "relativePinkness"],
 					values: "FloatLE"
 				}}}

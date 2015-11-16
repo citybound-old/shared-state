@@ -13,7 +13,7 @@ function validateSchema(schema) {
 	for (let [property, type] of schema) {
 		if (!Buffer.prototype["read" + type]
 		&& !type.entity && !type.dynamicPacked && !type.fixedPacked && !type.vector
-		&& !type.array && !type.enum && !type.staticDictionary && type !== "Bool")
+		&& !type.array && !type.enum && !type.staticMap && type !== "Bool")
 			throw "Unknown binary type " + JSON.stringify(type);
 	}
 }
@@ -159,7 +159,7 @@ function createReadCall(assignment, bufferVariable, type, offsetVariable, fieldO
 		${assignment}${JSON.stringify(type.enum)}[index]
 	`;
 
-	} else if (type.staticDictionary) {
+	} else if (type.staticMap) {
 
 		return `
 			let proxyHelper = ${propertyAlias}Helper;
@@ -169,16 +169,16 @@ function createReadCall(assignment, bufferVariable, type, offsetVariable, fieldO
 		`;
 
 		//let helperVars = [];
-		//let valueType = type.staticDictionary.values;
+		//let valueType = type.staticMap.values;
 		//let valueSize = BinaryTypes.getByteSize(valueType);
 		//let keyOffset = 0;
 		//
-		//for (var key of type.staticDictionary.keys) {
+		//for (var key of type.staticMap.keys) {
 		//	helperVars.push(createReadCall("\t\tvar " + key + " = ", bufferVariable, valueType, offsetVariable, fieldOffset + keyOffset));
 		//	keyOffset += valueSize;
 		//}
 		//
-		//let objectLiteral = "{\n" + type.staticDictionary.keys.map(
+		//let objectLiteral = "{\n" + type.staticMap.keys.map(
 		//	(key) => "\t\t\t" + key + ": " + key
 		//).join(",\n") + "\n\t\t}\n\t";
 		//
@@ -242,17 +242,17 @@ function createWriteCall(bufferVariable, type, inputVariable, offsetVariable, fi
 
 		return createWriteCall(bufferVariable, "UInt8", `${JSON.stringify(type.enum)}.indexOf(${inputVariable})`, offsetVariable, fieldOffset);
 
-	} else if (type.staticDictionary) {
+	} else if (type.staticMap) {
 
-		let keys = type.staticDictionary.keys;
-		let valueSize = BinaryTypes.getByteSize(type.staticDictionary.values);
+		let keys = type.staticMap.keys;
+		let valueSize = BinaryTypes.getByteSize(type.staticMap.values);
 
 		let propertyWriteCalls = "";
 
 		for (let i = 0, propertyOffset = 0; i < keys.length; i++, propertyOffset += valueSize) {
 			propertyWriteCalls += createWriteCall(
 				bufferVariable,
-				type.staticDictionary.values,
+				type.staticMap.values,
 				inputVariable + "." + keys[i],
 				offsetVariable,
 				fieldOffset + propertyOffset
@@ -274,15 +274,15 @@ function createWriteCall(bufferVariable, type, inputVariable, offsetVariable, fi
 }
 
 function createProxyHelper (property, type) {
-	if (type.staticDictionary) {
-		var valueType = type.staticDictionary.values;
+	if (type.staticMap) {
+		var valueType = type.staticMap.values;
 		var valueSize = BinaryTypes.getByteSize(valueType);
 
 		return `
 const ${property}Helper = {
 	_buffer: null,
 	_offset: 0,
-	${type.staticDictionary.keys.map((key, i) => `
+	${type.staticMap.keys.map((key, i) => `
 	get ${key} () {${createReadCall("return ", "this._buffer", valueType, "this._offset", i * valueSize)}},
 	set ${key} (value) {${createWriteCall("this._buffer", valueType, "value", "this._offset", i * valueSize)}}`
 	).join(",\n")}

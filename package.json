@@ -18,9 +18,7 @@
     "tape-catch": "^1.0.4"
   },
   "scripts": {
-    "compile": "babel --blacklist=regenerator -d src/ es6/",
-    "prepublish": "npm run compile",
-    "test": "npm run compile && node --harmony test.js | tap-difflet || true"
+    "test": "node --harmony test.js | tap-difflet || true"
   },
   "keywords": [],
   "repository": {
