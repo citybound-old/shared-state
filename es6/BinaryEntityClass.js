@@ -6,7 +6,19 @@ export function fromSchema (schema, name) {
 	schema.name = schema.name || name;
 	validateSchema(schema);
 
-	return createProxyClass(schema);
+	let code = proxyClassCode(schema);
+	console.log(code);
+
+	let {exports: {theClass: proxyClass}} = metaEval(
+		code,
+		{exports: {}},
+		`${schema.name}Proxy`,
+		`SharedMemory/EntityProxies/${schema.name}`,
+		"game://citybound/generated/",
+		{transpile: true}
+	);
+
+	return proxyClass;
 }
 
 function validateSchema(schema) {
@@ -18,70 +30,46 @@ function validateSchema(schema) {
 	}
 }
 
-let lastSchemaId = 0;
+function proxyClassCode (schema) {
+	return `
+exports.theClass = class ${schema.name}Proxy {
 
-function createProxyClass(schema) {
-	let classContainer = {};
+	static byteSize = ${byteSize(schema)};
 
-	let fieldOffset = 0;
-
-	let proxyHelpers = schema.map(
-		([property, type]) => createProxyHelper(property, type)
-	).filter(l => l).join("\n");
-
-	let header = `
-exports.theClass = class ${schema.name || "Entity" + lastSchemaId}Proxy {`;
-
-	let sizeInformation = `
-	static byteSize = ${byteSize(schema)};`;
-
-	let constructor = `
-	constructor(offset, buffer) {
+	constructor (offset, buffer) {
 		this._offset = (typeof offset === "undefined") ? -1 : offset;
 		this.id = this._offset;
 		this._buffer = buffer;
 	}
-`;
 
-	let members = schema.map(function([property, type]) {
-		let fieldAccessorsCode = createAccessors(property, type, fieldOffset);
-		let fieldIteratorCode = type.iterates ? createIterator(property, type, type.nextProperty, type.fieldOffset) : "";
-
-		fieldOffset += BinaryTypes.getByteSize(type);
-		return fieldAccessorsCode + fieldIteratorCode;
-	}).join("\n");
-
-	let footer = `
-}`;
-
-	fieldOffset = 0;
-
-	let copyObject = `
-	static copyObject(object, offset, buffer, existingProxy) {
-		${schema.map(function([property, type]) {
-			let writeCode = createWriteCall("buffer", type, "object." + property, "offset", fieldOffset);
-			fieldOffset += BinaryTypes.getByteSize(type);
-			return writeCode;
-		}).join("\n\t\t")}
+	${schema.map(([property, type]) =>`
+	get ${property} () {
+		${read("return ", "this._buffer", type, "this._offset", fieldOffset(schema, property), property)}
 	}
+	set ${property} (${property}) {
+		${write("this._buffer", type, property, "this._offset", fieldOffset(schema, property), property)}
+	}`
+	).join("\n\n")}
+
+	static copyObject(object, offset, buffer, existingProxy) {
+		${schema.map(([property, type]) =>
+			write("buffer", type, "object." + property, "offset", fieldOffset(schema, property), property)
+		).join("\n\t\t")}
+	}
+}
+
+${schema.map(([property, type]) =>
+	proxyHelper(property, type)
+).filter(helper => helper).join("\n\n")}
 `;
+}
 
-	let proxyClassCode = proxyHelpers + header + sizeInformation + constructor + members + copyObject + footer;
-
-	console.log(proxyClassCode);
-
-	let {exports: {theClass: proxyClass}} = metaEval(
-		proxyClassCode,
-		{exports: {}},
-		`${schema.name || "Entity" + lastSchemaId}Proxy`,
-		`SharedMemory/EntityProxies/${schema.name || "Entity" + lastSchemaId}`,
-		"game://citybound/" + "generated/",
-		{transpile: true}
-	);
-
-	lastSchemaId++;
-
-	return proxyClass;
+function fieldOffset (schema, property) {
+	let offset = 0;
+	for (let [currentProperty, type] of schema) {
+		if (currentProperty === property) return offset;
+		else offset += BinaryTypes.getByteSize(type);
+	}
 }
 
 function byteSize(schema) {
@@ -95,15 +83,9 @@ function byteSize(schema) {
 	return totalRecordSize;
 }
 
-function createAccessors(property, type, fieldOffset) {
-	return `
-	get ${property}() {${createReadCall("return ", "this._buffer", type, "this._offset", fieldOffset, property)}}
-	set ${property}(${property}) {${createWriteCall("this._buffer", type, property, "this._offset", fieldOffset)}}`;
-}
-
 const VALID_OFFSET = "10E8";
 
-function createReadCall(assignment, bufferVariable, type, offsetVariable, fieldOffset, propertyAlias) {
+function read(assignment, buffer, type, offset, fieldOffset, propertyAlias) {
 	if (type.vector) {
 
 		let length = type.vector;
@@ -113,7 +95,7 @@ function createReadCall(assignment, bufferVariable, type, offsetVariable, fieldO
 		let vector = new Array(${length});
 
 		for (let i = 0, iOffset = 0; i < ${length}; i++, iOffset += ${itemSize}) {
-			${createReadCall("vector[i] = ", bufferVariable, type.of, offsetVariable, fieldOffset + " + iOffset")}
+			${read("vector[i] = ", buffer, type.of, offset, fieldOffset + " + iOffset", propertyAlias + "Item")}
 		}
 
 		${assignment}vector;
@@ -121,7 +103,7 @@ function createReadCall(assignment, bufferVariable, type, offsetVariable, fieldO
 
 	} else if (type.entity) {
 
-		let rawIdExpr = createReadCall("let id = ", bufferVariable, "UInt32LE", offsetVariable, fieldOffset);
+		let rawIdExpr = read("let id = ", buffer, "UInt32LE", offset, fieldOffset);
 		return `
 		${rawIdExpr} - ${VALID_OFFSET};
 		${assignment}(${type.entity}(id))
@@ -129,22 +111,16 @@ function createReadCall(assignment, bufferVariable, type, offsetVariable, fieldO
 
 	} else if (type.dynamicPacked) {
 
-		let packedIndexExpr = createReadCall("let index = ", bufferVariable, "UInt32LE", offsetVariable, fieldOffset);
-		let packedSizeExpr = createReadCall("let size = ", bufferVariable, "UInt32LE", offsetVariable, fieldOffset + 4);
-		let bufferExpr = `let buffer = ${type.heap}.getBuffer(index, size)`;
-		let offsetExpr = `let offset = ${type.heap}.getOffset(index, size)`;
-		let valueExpr = `${type.dynamicPacked}.unpack(buffer, offset, size)`;
-
 		return `
 		let result;
-		${packedIndexExpr};
+		${read("let index = ", buffer, "UInt32LE", offset, fieldOffset)};
 
 		if (index > 0) {
 			index -= ${VALID_OFFSET};
-			${packedSizeExpr};
-			${bufferExpr};
-			${offsetExpr};
-			result = ${valueExpr};
+			${read("let size = ", buffer, "UInt32LE", offset, fieldOffset + 4)};
+			let buffer = ${type.heap}.getBuffer(index, size);
+			let offset = ${type.heap}.getOffset(index, size);
+			result = ${type.dynamicPacked}.unpack(buffer, offset, size);
 		} else {
 			result = undefined;
 		}
@@ -155,47 +131,31 @@ function createReadCall(assignment, bufferVariable, type, offsetVariable, fieldO
 	} else if (type.enum) {
 
 		return `
-		${createReadCall("let index = ", bufferVariable, "UInt8", offsetVariable, fieldOffset)};
-		${assignment}${JSON.stringify(type.enum)}[index]
+		${read("let index = ", buffer, "UInt8", offset, fieldOffset)};
+		${assignment}${propertyAlias}EnumValues[index]
 	`;
 
 	} else if (type.staticMap) {
 
 		return `
 			let proxyHelper = ${propertyAlias}Helper;
-			proxyHelper._buffer = ${bufferVariable};
-			proxyHelper._offset = ${offsetVariable} + ${fieldOffset};
+			proxyHelper._buffer = ${buffer};
+			proxyHelper._offset = ${offset} + ${fieldOffset};
 			${assignment}proxyHelper;
 		`;
 
-		//let helperVars = [];
-		//let valueType = type.staticMap.values;
-		//let valueSize = BinaryTypes.getByteSize(valueType);
-		//let keyOffset = 0;
-		//
-		//for (var key of type.staticMap.keys) {
-		//	helperVars.push(createReadCall("\t\tvar " + key + " = ", bufferVariable, valueType, offsetVariable, fieldOffset + keyOffset));
-		//	keyOffset += valueSize;
-		//}
-		//
-		//let objectLiteral = "{\n" + type.staticMap.keys.map(
-		//	(key) => "\t\t\t" + key + ": " + key
-		//).join(",\n") + "\n\t\t}\n\t";
-		//
-		//return "\n" + helperVars.join(";\n") + ";\n\n\t\t" + assignment + objectLiteral;
-
 	} else if (type === "Bool") {
 
-		return `${assignment}!!${bufferVariable}.readUInt8(${offsetVariable} + ${fieldOffset}, true)`;
+		return `${assignment}!!${buffer}.readUInt8(${offset} + ${fieldOffset}, true)`;
 
 	} else {
 
-		return `${assignment}${bufferVariable}.read${type}(${offsetVariable} + ${fieldOffset}, true)`;
+		return `${assignment}${buffer}.read${type}(${offset} + ${fieldOffset}, true)`;
 
 	}
 }
 
-function createWriteCall(bufferVariable, type, inputVariable, offsetVariable, fieldOffset) {
+function write(buffer, type, input, offset, fieldOffset, propertyAlias) {
 	if (type.vector) {
 
 		let length = type.vector;
@@ -204,43 +164,41 @@ function createWriteCall(bufferVariable, type, inputVariable, offsetVariable, fi
 		return `
 
 		for (let i = 0, iOffset = 0; i < ${length}; i++, iOffset += ${itemSize}) {
-			${createWriteCall(bufferVariable, type.of, inputVariable + "[i]", offsetVariable, fieldOffset + " + iOffset")}
+			${write(buffer, type.of, input + "[i]", offset, fieldOffset + " + iOffset", propertyAlias + "Item")}
 		}
 	`
 
 	} else if (type.entity) {
 
-		return createWriteCall(bufferVariable, "UInt32LE", `(${inputVariable} ? ${inputVariable}.id + ${VALID_OFFSET} : 0)`, offsetVariable, fieldOffset);
+		return write(buffer, "UInt32LE", `(${input} ? ${input}.id + ${VALID_OFFSET} : 0)`, offset, fieldOffset, propertyAlias);
 
 	} else if (type.dynamicPacked) {
 
-		let packedIndexExpr = createReadCall("let oldIndex = ", bufferVariable, "UInt32LE", offsetVariable, fieldOffset);
-		let packedLengthExpr = createReadCall("let oldSize = ", bufferVariable, "UInt32LE", offsetVariable, fieldOffset + 4);
 		return `
-		${packedIndexExpr};
+		${read("let oldIndex = ", buffer, "UInt32LE", offset, fieldOffset)};
 
 		if (oldIndex > 0) {
-			${packedLengthExpr};
+			${read("let oldSize = ", buffer, "UInt32LE", offset, fieldOffset + 4)};
 			${type.heap}.free(oldIndex - ${VALID_OFFSET}, oldSize);
 		}
 
-		let packedSize = ${type.dynamicPacked}.packedSize(${inputVariable});
+		let packedSize = ${type.dynamicPacked}.packedSize(${input});
 
 		if (packedSize > 0) {
 			let packedIndex = ${type.heap}.allocate(packedSize);
 			let packedBuffer = ${type.heap}.getBuffer(packedIndex, packedSize);
 			let packedOffset = ${type.heap}.getOffset(packedIndex, packedSize);
-			${type.dynamicPacked}.pack(${inputVariable}, packedBuffer, packedOffset);
-			${createWriteCall(bufferVariable, "UInt32LE", `packedIndex + ${VALID_OFFSET}`, offsetVariable, fieldOffset)};
-			${createWriteCall(bufferVariable, "UInt32LE", "packedSize", offsetVariable, fieldOffset + 4)};
+			${type.dynamicPacked}.pack(${input}, packedBuffer, packedOffset);
+			${write(buffer, "UInt32LE", `packedIndex + ${VALID_OFFSET}`, offset, fieldOffset, propertyAlias)};
+			${write(buffer, "UInt32LE", "packedSize", offset, fieldOffset + 4, propertyAlias)};
 		} else {
-			${createWriteCall(bufferVariable, "UInt32LE", "0", offsetVariable, fieldOffset)};
+			${write(buffer, "UInt32LE", "0", offset, fieldOffset, propertyAlias)};
 		}
 	`;
 
 	} else if (type.enum) {
 
-		return createWriteCall(bufferVariable, "UInt8", `${JSON.stringify(type.enum)}.indexOf(${inputVariable})`, offsetVariable, fieldOffset);
+		return write(buffer, "UInt8", `${propertyAlias}EnumValues.indexOf(${input})`, offset, fieldOffset, propertyAlias);
 
 	} else if (type.staticMap) {
 
@@ -250,31 +208,34 @@ function createWriteCall(bufferVariable, type, inputVariable, offsetVariable, fi
 		let propertyWriteCalls = "";
 
 		for (let i = 0, propertyOffset = 0; i < keys.length; i++, propertyOffset += valueSize) {
-			propertyWriteCalls += createWriteCall(
-				bufferVariable,
+			propertyWriteCalls += write(
+				buffer,
 				type.staticMap.values,
-				inputVariable + "." + keys[i],
-				offsetVariable,
-				fieldOffset + propertyOffset
+				input + "." + keys[i],
+				offset,
+				fieldOffset + propertyOffset,
+				propertyAlias + "Value"
 			);
-			propertyWriteCalls += ";\n";
+			propertyWriteCalls += ";\n\t\t";
 		}
 
 		return propertyWriteCalls;
 
 	} else if (type === "Bool") {
 
-		return createWriteCall(bufferVariable, "UInt8", `${inputVariable} ? 1 : 0`, offsetVariable, fieldOffset);
+		return write(buffer, "UInt8", `${input} ? 1 : 0`, offset, fieldOffset, propertyAlias);
 
 	} else {
 
-		return `${bufferVariable}.write${type}(${inputVariable}, ${offsetVariable} + ${fieldOffset}, true)`;
+		return `${buffer}.write${type}(${input}, ${offset} + ${fieldOffset}, true)`;
 
 	}
 }
 
-function createProxyHelper (property, type) {
-	if (type.staticMap) {
+function proxyHelper (property, type) {
+	if (type.vector) {
+		return proxyHelper(property + "Item", type.of);
+	} else if (type.staticMap) {
 		var valueType = type.staticMap.values;
 		var valueSize = BinaryTypes.getByteSize(valueType);
 
@@ -283,9 +244,11 @@ const ${property}Helper = {
 	_buffer: null,
 	_offset: 0,
 	${type.staticMap.keys.map((key, i) => `
-	get ${key} () {${createReadCall("return ", "this._buffer", valueType, "this._offset", i * valueSize)}},
-	set ${key} (value) {${createWriteCall("this._buffer", valueType, "value", "this._offset", i * valueSize)}}`
+	get ${key} () {${read("return ", "this._buffer", valueType, "this._offset", i * valueSize)}},
+	set ${key} (value) {${write("this._buffer", valueType, "value", "this._offset", i * valueSize, property)}}`
 	).join(",\n")}
-}`
+};`
+	} else if (type.enum) {
+		return `const ${property}EnumValues = ${JSON.stringify(type.enum)};`;
 	}
 }
