@@ -47,8 +47,8 @@ const SimpleEntity = BinaryProxy.fromStruct(schema);
 
 // Create a buffer for one entity and get an instance of the proxy class as a view on the buffer.
 
-const buffer = new Buffer(SimpleEntity.binarySize);
-buffer.fill(0, SimpleEntity.binarySize);
+const buffer = new Buffer(SimpleEntity.byteSize);
+buffer.fill(0);
 
 const entity = new SimpleEntity(0, buffer);
 
