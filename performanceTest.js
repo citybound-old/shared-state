@@ -9,13 +9,19 @@ var opsPerSecond = function opsPerSecond (diff, N) {
 	const N = 1000000;
 	const TRIES = 20;
 
-	var schema = [
-		{number: "UInt8"},
-		{flag: "Bool"},
-		{color: {enum: ["red", "green", "blue"]}}
-	];
+	var struct = {
+		type: 'Struct',
+		entries: [
+			['number', 'UInt8'],
+			['flag', 'Bool'],
+			['color', {
+				type: 'Enum',
+				options: ['red', 'green', 'blue']
+			}]
+		]
+	};
 
-	var ProxyClass = sharedState.BinaryEntityClass.fromSchema(schema, 'Test');
+	var ProxyClass = sharedState.EntityProxy.fromStruct(struct, 'Test');
 
 	var testPerformance = function () {
 		var buffer = new Buffer(N * ProxyClass.byteSize);
@@ -29,7 +35,7 @@ var opsPerSecond = function opsPerSecond (diff, N) {
 			entity._offset = i * ProxyClass.byteSize;
 			entity.id = entity._offset;
 
-			entity.number = i;
+			entity.number = i % 255;
 			entity.flag = i % 2 === 0;
 			entity.color = "blue";
 
@@ -50,7 +56,7 @@ var opsPerSecond = function opsPerSecond (diff, N) {
 		for (var i = 0; i < N; i++) {
 			var entity = new ProxyClass(i * ProxyClass.byteSize, buffer);
 
-			entity.number = i;
+			entity.number = i % 255;
 			entity.flag = i % 2 === 0;
 			entity.color = "blue";
 
@@ -78,14 +84,23 @@ var opsPerSecond = function opsPerSecond (diff, N) {
 
 (function referencedEntity () {
 
-	global.otherEntityGetter = function (id) {return {id: id};};
+	const other = {id: 0};
+	global.otherEntityFromId = function (id) {other.id = id; return other;};
+	global.otherEntityToId = function (entity) {return entity.id};
 
-	var schema = [
-		{dummy: "UInt8"},
-		{other: {entity: "otherEntityGetter"}}
-	];
+	var struct = {
+		type: 'Struct',
+		entries: [
+			['dummy', 'UInt8'],
+			['other', {
+				type: 'Reference',
+				toId: 'otherEntityToId',
+				fromId: 'otherEntityFromId'
+			}]
+		]
+	};
 
-	var ProxyClass = sharedState.BinaryEntityClass.fromSchema(schema, 'Test');
+	var ProxyClass = sharedState.EntityProxy.fromStruct(struct, 'Test');
 
 	const N = 1000000;
 	const TRIES = 20;
@@ -149,18 +164,18 @@ var opsPerSecond = function opsPerSecond (diff, N) {
 })();
 
 (function dynamicArray() {
-	global.PackableClass = {
-		packedSize: function (arr) {return arr.length},
-		pack: function (arr, buffer, offset) {
+	global.packer = {
+		byteSize: function (arr) {return arr.length},
+		pack: function (arr, offset, buffer) {
 			for (var i = 0; i < arr.length; i++) {
 				buffer.writeUInt8(arr[i], offset);
 				offset++;
 			}
 		},
-		unpack: function (buffer, offset, length) {
-			var result = new Array(length);
+		unpack: function (offset, buffer, byteSize) {
+			var result = new Array(byteSize);
 
-			for (var i = 0; i < length; i++) {
+			for (var i = 0; i < byteSize; i++) {
 				result[i] = buffer.readUInt8(offset + i);
 			}
 
@@ -168,12 +183,19 @@ var opsPerSecond = function opsPerSecond (diff, N) {
 		}
 	};
 
-	var schema = [
-		{dummy: "UInt8"},
-		{intList: {dynamicPacked: "PackableClass", heap: "intListHeap"}}
-	];
+	var struct = {
+		type: 'Struct',
+		entries: [
+			['dummy', 'UInt8'],
+			['intList', {
+				type: 'DynamicPacked',
+				packer: 'packer',
+				heap: 'intListHeap'
+			}]
+		]
+	};
 
-	var ProxyClass = sharedState.BinaryEntityClass.fromSchema(schema, 'Test');
+	var ProxyClass = sharedState.EntityProxy.fromStruct(struct, 'Test');
 
 	global.intListHeap = new sharedState.Heap(sharedState.RecordBuffer);
 
