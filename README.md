@@ -29,22 +29,28 @@ while still offering a familiar high level, object-like interface for the code w
 Using a simple entity stored in a buffer:
 ```javascript
 // Create a simple proxy entity class
-import {BinaryEntityClass} from 'shared-state'
+import {BinaryProxy} from 'shared-state'
 
-const schema = [
-    {number: "UInt8"},
-    {flag: "Bool"},
-    {color: {enum: ["red", "green", "blue"]}}
-];
+const struct = {
+    type: 'Struct',
+    entries: [
+        ['number', 'UInt8'],
+        ['flag', 'Bool'],
+        ['color', {
+            type: 'Enum',
+            options: ['red', 'green', 'blue']
+        }]
+    ]
+};
 
-const SimpleEntity = BinaryEntityClass.fromSchema(schema);
+const SimpleEntity = BinaryProxy.fromStruct(schema);
 
 // Create a buffer for one entity and get an instance of the proxy class as a view on the buffer.
 
 const buffer = new Buffer(SimpleEntity.binarySize);
 buffer.fill(0, SimpleEntity.binarySize);
 
-const entity = new SimpleEntity(buffer, 0);
+const entity = new SimpleEntity(0, buffer);
 
 // Get default values
 console.log(entity.number, entity.flag, entity.color);
@@ -60,7 +66,7 @@ console.log(entity.number, entity.flag, entity.color);
 
 // Create another view on the same buffer
 // (for example in another process, or after reloading the game)
-const entity2 = new SimpleEntity(buffer, 0);
+const entity2 = new SimpleEntity(0, buffer);
 
 console.log(entity2.number, entity2.flag, entity2.color);
 // => 13, true, "blue"

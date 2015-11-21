@@ -1,20 +1,26 @@
 var sharedState = require('./');
 var test = require('tape-catch');
 
-test('Binary collections of structs that can be shared and persisted via mmap', function(t) {
+test('Collections of structs that are stored in a binary buffer and that can be shared and persisted via mmap', function(t) {
 
-	t.test('A schema with some simple properties', function (t) {
+	t.test('A struct with some simple properties', function (t) {
 
-		var schema = [
-			{number: "UInt8"},
-			{flag: "Bool"},
-			{color: {enum: ["red", "green", "blue"]}}
-		];
+		var struct = {
+			type: 'Struct',
+			entries: [
+				['number', 'UInt8'],
+				['flag', 'Bool'],
+				['color', {
+					type: 'Enum',
+					options: ['red', 'green', 'blue']
+				}]
+			]
+		};
 
 		var ProxyClass;
 
 		t.test('should compile into a ProxyClass', function (t) {
-			ProxyClass = sharedState.BinaryEntityClass.fromSchema(schema, 'Simple');
+			ProxyClass = sharedState.EntityProxy.fromStruct(struct, 'Simple');
 			t.end();
 		});
 
@@ -26,14 +32,14 @@ test('Binary collections of structs that can be shared and persisted via mmap', 
 		var entity;
 		var buffer;
 
-		t.test('given a new buffer, properties should be initialized to "zero"', function (t) {
+		t.test('given a new buffer, properties should be initialized to zero', function (t) {
 			buffer = new Buffer(ProxyClass.byteSize);
 			buffer.fill(0);
 			entity = new ProxyClass(0, buffer);
 
 			t.equal(entity.number, 0);
 			t.equal(entity.flag, false);
-			t.equal(entity.color, "red");
+			t.equal(entity.color, 'red');
 
 			t.end();
 		});
@@ -41,66 +47,74 @@ test('Binary collections of structs that can be shared and persisted via mmap', 
 		t.test('properties should be readable and writeable', function (t) {
 			entity.number = 42;
 			entity.flag = true;
-			entity.color = "blue";
+			entity.color = 'blue';
 
 			t.equal(entity.number, 42);
 			t.equal(entity.flag, true);
-			t.equal(entity.color, "blue");
+			t.equal(entity.color, 'blue');
 
 			t.end();
 		});
 
 		t.test('properties should be writeable as a whole object', function (t) {
-			ProxyClass.copyObject({
+			ProxyClass.write({
 				number: 13,
 				flag: false,
-				color: "green"
+				color: 'green'
 			}, 0, buffer);
 
 			t.equal(entity.number, 13);
 			t.equal(entity.flag, false);
-			t.equal(entity.color, "green");
+			t.equal(entity.color, 'green');
 
 			t.end();
 		});
 	});
 
-	t.test('A schema with a reference to another entity', function (t) {
+	t.test('A struct with a reference to another entity', function (t) {
 
-		global.otherEntityGetter = function (id) {return {id: id};};
+		global.otherEntityFromId = function (id) {return {id: id};};
+		global.otherEntityToId = function (entity) {return entity.id};
 
-		var schema = [
-			{dummy: "UInt8"},
-			{other: {entity: "otherEntityGetter"}}
-		];
+		var struct = {
+			type: 'Struct',
+			entries: [
+				['dummy', 'UInt8'],
+				['other', {
+					type: 'Reference',
+					toId: 'otherEntityToId',
+					fromId: 'otherEntityFromId'
+				}]
+			]
+		};
 
 		var ProxyClass;
 
 		t.test('should compile into a ProxyClass', function (t) {
-			ProxyClass = sharedState.BinaryEntityClass.fromSchema(schema, 'Reference');
+			ProxyClass = sharedState.EntityProxy.fromStruct(struct, 'Reference');
 			t.end();
 		});
 
 		var buffer;
 		var entity;
 
-		t.test('should call the finder function with a negative id if no entity was set', function (t) {
+		t.test('should return undefined if no entity was set', function (t) {
 			buffer = new Buffer(ProxyClass.byteSize);
 			buffer.fill(0);
 			entity = new ProxyClass(0, buffer);
 
-			t.assert(entity.other.id < 0, "should be negative");
+			t.equal(entity.other, undefined);
 			t.end();
 		});
 
 		t.test('should save the id of an entity if it is set', function (t) {
-			entity.other = {id: 42, dummy: "bla"};
+			entity.other = {id: 42, dummy: 'bla'};
 			t.equal(entity.other.id, 42);
 			t.end();
 		});
 
 		t.test('should save the id of an entity if it is set as part of a whole object', function (t) {
-			ProxyClass.copyObject({
+			ProxyClass.write({
 				dummy: 5,
 				other: {id: 37}
 			}, 0, buffer);
@@ -108,26 +122,26 @@ test('Binary collections of structs that can be shared and persisted via mmap', 
 			t.end();
 		});
 
-		t.test('should return a negative number again after setting the entity to undefined', function (t) {
+		t.test('should return a undefined again after setting the entity to undefined', function (t) {
 			entity.other = undefined;
-			t.assert(entity.other.id < 0, "should be negative");
+			t.equal(entity.other, undefined);
 			t.end();
 		});
 	});
 
-	t.test("given a heap and a packable class, entities should support packed properties of dynamic size", function (t) {
-		global.PackableClass = {
-			packedSize: function (arr) {return arr.length},
-			pack: function (arr, buffer, offset) {
+	t.test('given a packer, entities should support packed properties of dynamic size', function (t) {
+		global.packer = {
+			byteSize: function (arr) {return arr.length},
+			pack: function (arr, offset, buffer) {
 				for (var i = 0; i < arr.length; i++) {
 					buffer.writeUInt8(arr[i], offset);
 					offset++;
 				}
 			},
-			unpack: function (buffer, offset, length) {
-				var result = new Array(length);
+			unpack: function (offset, buffer, byteSize) {
+				var result = new Array(byteSize);
 
-				for (var i = 0; i < length; i++) {
+				for (var i = 0; i < byteSize; i++) {
 					result[i] = buffer.readUInt8(offset + i);
 				}
 
@@ -135,13 +149,20 @@ test('Binary collections of structs that can be shared and persisted via mmap', 
 			}
 		};
 
-		var schema = [
-			{dummy: "UInt8"},
-			{intList: {dynamicPacked: "PackableClass", heap: "intListHeap"}}
-		];
+		var struct = {
+			type: 'Struct',
+			entries: [
+				['dummy', 'UInt8'],
+				['intList', {
+					type: 'DynamicPacked',
+					packer: 'packer',
+					heap: 'intListHeap'
+				}]
+			]
+		};
 
 		t.test('should compile into a ProxyClass', function (t) {
-			ProxyClass = sharedState.BinaryEntityClass.fromSchema(schema, 'DynamicPacked');
+			ProxyClass = sharedState.EntityProxy.fromStruct(struct, 'DynamicPacked');
 			t.end();
 		});
 
@@ -160,17 +181,31 @@ test('Binary collections of structs that can be shared and persisted via mmap', 
 		});
 	});
 
-	t.test("should support vector properties", function (t) {
+	t.test('should support vector properties', function (t) {
 
-		var schema = [
-			{position: {vector: 3, of: "FloatLE"}},
-			{colorCombo: {vector: 2, of: {enum: ["red", "green", "blue"]}}}
-		];
+		var struct = {
+			type: 'Struct',
+			entries: [
+				['position', {
+					type: 'Vector',
+					dimension: 3,
+					items: 'FloatLE'
+				}],
+				['colorCombo', {
+					type: 'Vector',
+					dimension: 2,
+					items: {
+						type: 'Enum',
+						options: ['red', 'green', 'blue']
+					}
+				}]
+			]
+		};
 
 		var ProxyClass;
 
 		t.test('should compile into a ProxyClass', function (t) {
-			ProxyClass = sharedState.BinaryEntityClass.fromSchema(schema, 'Reference');
+			ProxyClass = sharedState.EntityProxy.fromStruct(struct, 'Vector');
 			t.end();
 		});
 
@@ -182,35 +217,35 @@ test('Binary collections of structs that can be shared and persisted via mmap', 
 		var entity;
 		var buffer;
 
-		t.test('given a new buffer, properties should be initialized to "zero"', function (t) {
+		t.test('given a new buffer, properties should be initialized to zero', function (t) {
 			buffer = new Buffer(ProxyClass.byteSize);
 			buffer.fill(0);
 			entity = new ProxyClass(0, buffer);
 
 			t.deepEqual(entity.position, [0, 0, 0]);
-			t.deepEqual(entity.colorCombo, ["red", "red"]);
+			t.deepEqual(entity.colorCombo, ['red', 'red']);
 
 			t.end();
 		});
 
 		t.test('vector properties should be readable and writeable', function (t) {
 			entity.position = [0.25, 0.75, -0.25]; // these values should encode exactly as floats
-			entity.colorCombo = ["blue", "red"];
+			entity.colorCombo = ['blue', 'red'];
 
 			t.deepEqual(entity.position, [0.25, 0.75, -0.25]);
-			t.deepEqual(entity.colorCombo, ["blue", "red"]);
+			t.deepEqual(entity.colorCombo, ['blue', 'red']);
 
 			t.end();
 		});
 		//
 		t.test('vector properties should be writeable as a whole object', function (t) {
-			ProxyClass.copyObject({
+			ProxyClass.write({
 				position: [0.25, 0.75, -0.25], // these values should encode exactly as floats
-				colorCombo: ["blue", "red"]
+				colorCombo: ['blue', 'red']
 			}, 0, buffer);
 
 			t.deepEqual(entity.position, [0.25, 0.75, -0.25]);
-			t.deepEqual(entity.colorCombo, ["blue", "red"]);
+			t.deepEqual(entity.colorCombo, ['blue', 'red']);
 
 			t.end();
 		});
@@ -218,30 +253,30 @@ test('Binary collections of structs that can be shared and persisted via mmap', 
 		t.end();
 	});
 
-	t.test("should support dictionary-type properties", function (t) {
+	t.test('should support dictionary-type properties', function (t) {
 
-		t.test("(I) static maps", function (t) {
+		t.test('(I) static maps', function (t) {
 
-			var schema = [
-				{age: "UInt8"},
-				{
-					resources: {
-						staticMap: {
-							keys: ["money", "time", "coffee"],
-							values: "FloatLE"
-						}
-					}
-				}
-			];
+			var struct = {
+				type: 'Struct',
+				entries: [
+					['age', 'UInt8'],
+					['resources', {
+						type: 'StaticMap',
+						keys: ['money', 'time', 'coffee'],
+						values: 'FloatLE'
+					}]
+				]
+			};
 
 			var ProxyClass;
 
-			t.test("Should compile into a ProxyClass", function (t) {
-				ProxyClass = sharedState.BinaryEntityClass.fromSchema(schema);
+			t.test('Should compile into a ProxyClass', function (t) {
+				ProxyClass = sharedState.EntityProxy.fromStruct(struct);
 				t.end();
 			});
 
-			t.test("Should have a record size of 13 bytes", function (t) {
+			t.test('Should have a record size of 13 bytes', function (t) {
 				t.equal(ProxyClass.byteSize, 13);
 				t.end();
 			});
@@ -249,7 +284,7 @@ test('Binary collections of structs that can be shared and persisted via mmap', 
 			var entity;
 			var buffer;
 
-			t.test('given a new buffer, properties should be initialized to "zero"', function (t) {
+			t.test('given a new buffer, properties should be initialized to zero', function (t) {
 				buffer = new Buffer(ProxyClass.byteSize);
 				buffer.fill(0);
 
@@ -287,27 +322,31 @@ test('Binary collections of structs that can be shared and persisted via mmap', 
 
 		});
 
-		t.test("(II) dynamic maps", function (t) {
+		t.test('(II) dynamic maps', function (t) {
 
-			var schema = [
-				{dummy: "UInt8"},
-				{resources: {dynamicMap: {
-					keys: ["age", "freetime", "stress", "hunger", "thirst", "health", "edges", "eyes", "pylons", "smell", "relativePinkness"],
-					values: "FloatLE"
-				}}}
-			];
+			var struct = {
+				type: 'Struct',
+				entries: [
+					['dummy', 'UInt8'],
+					['resources', {
+						type: 'DynamicMap',
+						keys: ['age', 'freetime', 'stress', 'hunger', 'thirst', 'health', 'edges', 'eyes', 'pylons', 'smell', 'relativePinkness'],
+						values: 'FloatLE'
+					}]
+				]
+			};
 
 			var ProxyClass;
 
-			t.test("should compile into a proxy class", function (t) {
-				ProxyClass = sharedState.BinaryEntityClass.fromSchema(schema);
+			t.test('should compile into a proxy class', function (t) {
+				ProxyClass = sharedState.EntityProxy.fromStruct(struct);
 				t.end();
 			});
 
 			var entity;
 			var buffer;
 
-			t.test("should return a default value for any possible key after initialization", function (t) {
+			t.test('should return a default value for any possible key after initialization', function (t) {
 				buffer = new Buffer(ProxyClass.byteSize);
 				entity = new ProxyClass(0, buffer);
 
@@ -318,7 +357,7 @@ test('Binary collections of structs that can be shared and persisted via mmap', 
 				t.end();
 			});
 
-			t.test("should support writing and reading to individual keys", function (t) {
+			t.test('should support writing and reading to individual keys', function (t) {
 				entity.resources.hunger = 1000;
 				entity.resources.eyes = 3;
 				entity.resources.relativePinkness = -35.4;

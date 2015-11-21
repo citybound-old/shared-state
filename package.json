@@ -16,11 +16,11 @@
   },
   "devDependencies": {
     "tape-catch": "^1.0.4",
-    "tap-difflet": "^0.4.0",
+    "tap-spec": "https://github.com/citybound/tap-spec.git",
     "tape": "^4.2.2"
   },
   "scripts": {
-    "test": "node --harmony test.js | tap-difflet || true"
+    "test": "node --harmony test.js | tap-spec || true"
   },
   "keywords": [],
   "repository": {
