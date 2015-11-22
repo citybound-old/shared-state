@@ -162,15 +162,96 @@ export default function View (type) {
 				[key, type.values]
 			)
 		}),
-		DynamicMap: undefined,
+		DynamicMap: type => ({
+			read: (output, offset, buffer, prefix) => [
+				...View('UInt32LE').read(
+				'const pointer = ', offset, buffer),
+				`if (${pointerValid('pointer')}) {`,
+				`   const index = ${pointerToIndex('pointer')};`,
+				...t(View('UInt32LE').read(
+					'const givenPairsByteSize = ', offset + ' + 4', buffer)),
+				`   const keyValueByteSize = (1 + ${byteSize(type.values)});`,
+				`   const nKeys = givenPairsByteSize / keyValueByteSize;`,
+				`   const heapBuffer = ${type.heap}.getBuffer(index, givenPairsByteSize);`,
+				`   const heapOffset = ${type.heap}.getOffset(index, givenPairsByteSize);`,
+				`   return new ${prefix}MapProxy(heapOffset, heapBuffer, nKeys);`,
+				`} else {`,
+				`   return new ${prefix}MapProxy(null, null, 0);`,
+				`}`
+			],
+			write: (input, offset, buffer, prefix) => [
+				...View('UInt32LE').read(
+				'const oldPointer = ', offset, buffer),
+				`if (${pointerValid('oldPointer')}) {`,
+				`   const oldIndex = ${pointerToIndex('oldPointer')};`,
+				...t(View('UInt32LE').read(
+					'const oldByteSize = ', offset + ' + 4', buffer)),
+				`   ${type.heap}.free(oldIndex, oldByteSize)`,
+				`}`,
+				``,
+				`const givenKeys = Object.keys(${input});`,
+				`const keyValueByteSize = (1 + ${byteSize(type.values)});`,
+				`const givenPairsByteSize = givenKeys.length * keyValueByteSize;`,
+				``,
+				`if (givenPairsByteSize) {`,
+				`   const index = ${type.heap}.allocate(givenPairsByteSize);`,
+				`   const heapBuffer = ${type.heap}.getBuffer(index, givenPairsByteSize);`,
+				`   const heapOffset = ${type.heap}.getOffset(index, givenPairsByteSize);`,
+				`   `,
+				`   for(let i = 0, keyOffset = 0; i < givenKeys.length; i++, keyOffset += keyValueByteSize) {`,
+				`       const keyIndex = ${prefix}Keys.indexOf(givenKeys[i]);`,
+				...t(t(View('UInt8').write(
+						'keyIndex', `heapOffset + keyOffset`, 'heapBuffer'))),
+				`       const valueAtKey = ${input}[givenKeys[i]];`,
+				...t(t(View(type.values).write(
+						'valueAtKey', `heapOffset + keyOffset + 1`, 'heapBuffer'))),
+				`   }`,
+				`   `,
+				...t(View('UInt32LE').write(
+						indexToPointer('index'), offset, buffer)),
+				...t(View('UInt32LE').write(
+						'givenPairsByteSize', offset + ' + 4', buffer)),
+				`} else {`,
+				...t(View('UInt32LE').write(
+					invalidPointer(), offset, buffer)),
+				`}`
+
+			],
+			defines: (prefix) => [
+				`const ${prefix}Keys = ${JSON.stringify(type.keys)}`,
+				``,
+				`class ${prefix}MapProxy {`,
+				`   constructor (offset, buffer, nKeys) {`,
+				`      this._offset = offset;`,
+				`      this._buffer = buffer;`,
+				`      this._nKeys = nKeys;`,
+				`   }`,
+				...flatten(type.keys.map((key, keyIndex) => [
+				`   get ${key} () {`,
+				`      const keyValueByteSize = (1 + ${byteSize(type.values)});`,
+				`      for (var i = 0, keyOffset = 0; i < this._nKeys; i++, keyOffset += keyValueByteSize) {`,
+				...(t(t(t(View('UInt8').read(
+						  'const keyIndex = ', 'this._offset + keyOffset', 'this._buffer'))))),
+				`         if (keyIndex === ${keyIndex}) {`,
+				...(t(t(t(t(View(type.values).read(
+						     'return ', 'this._offset + keyOffset + 1', 'this._buffer')))))),
+				`         }`,
+				`      }`,
+				`   }`
+				])),
+				`}`
+			]
+		}),
 		Struct: type => ({
 			read: (output, offset, buffer, prefix) => [
 				`${output}new ${prefix}StructProxy(${offset}, ${buffer})`
 			],
 			write: (input, offset, buffer, prefix) =>
-				flatten(mapWithIncreasingOffset(type.entries, ([name, entryType], entryOffset) =>
-					View(entryType).write(
-					input + '.' + name, offset + ' + ' + entryOffset, buffer, prefix + '_' + name),
+				flatten(mapWithIncreasingOffset(type.entries, ([name, entryType], entryOffset) => [
+					`{`,
+						...t(View(entryType).write(
+						input + '.' + name, offset + ' + ' + entryOffset, buffer, prefix + '_' + name)),
+					`}`],
 
 					([name, entryType], entryOffset) => entryOffset + byteSize(entryType)
 				)),

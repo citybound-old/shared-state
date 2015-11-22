@@ -331,10 +331,13 @@ test('Collections of structs that are stored in a binary buffer and that can be 
 					['resources', {
 						type: 'DynamicMap',
 						keys: ['age', 'freetime', 'stress', 'hunger', 'thirst', 'health', 'edges', 'eyes', 'pylons', 'smell', 'relativePinkness'],
-						values: 'FloatLE'
+						values: 'FloatLE',
+						heap: 'resourcesHeap'
 					}]
 				]
 			};
+
+			global.resourcesHeap = new sharedState.Heap(sharedState.RecordBuffer);
 
 			var ProxyClass;
 

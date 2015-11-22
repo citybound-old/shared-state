@@ -1,5 +1,6 @@
 require("babel-core/register");
 const EntityProxy = require("./es6/EntityProxy");
+const View = require("./es6/BinaryViews");
 const RecordBuffer = require('./es6/RecordBuffer');
 const Heap = require('./es6/Heap');
 
@@ -41,15 +42,22 @@ const struct = {
 			fromId: 'carFromId',
 			toId: 'carToId'
 		}],
-		['resources', {
+		['stuff', {
 			type: 'StaticMap',
 			keys: ['time', 'money', 'coffee'],
 			values: 'FloatLE'
+		}],
+		['resources', {
+			type: 'DynamicMap',
+			keys: ['age', 'freetime', 'stress', 'hunger', 'thirst', 'health', 'edges', 'eyes', 'pylons', 'smell', 'relativePinkness'],
+			values: 'FloatLE',
+			heap: 'ResourcesHeap'
 		}]
 	]
 };
 
 global.NumberListHeap = new Heap(RecordBuffer);
+global.ResourcesHeap = new Heap(RecordBuffer);
 
 global.NumberListPacker = {
 	byteSize: (arrayOfNumbers) => arrayOfNumbers.length,
@@ -75,7 +83,6 @@ global.carToId = function (car) {
 	return car.id;
 };
 
-
 const TestProxy = EntityProxy.fromStruct(struct, "Test");
 
 const buffer = new Buffer(TestProxy.byteSize);
@@ -88,3 +95,15 @@ console.log(testEntity.color);
 console.log(testEntity.listOfNumbers);
 console.log(testEntity.ratings);
 console.log(testEntity.birthdays[1].day);
+
+testEntity.resources = {
+	age: 15,
+	stress: 0,
+	hunger: 1000
+};
+
+console.log(testEntity.resources.age);
+console.log(testEntity.resources.stress);
+console.log(testEntity.resources.hunger);
+
+testEntity.resources.eyes = 3;
