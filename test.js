@@ -351,6 +351,7 @@ test('Collections of structs that are stored in a binary buffer and that can be 
 
 			t.test('should return a default value for any possible key after initialization', function (t) {
 				buffer = new Buffer(ProxyClass.byteSize);
+				buffer.fill(0);
 				entity = new ProxyClass(0, buffer);
 
 				t.equal(entity.resources.freetime, 0);
@@ -363,7 +364,12 @@ test('Collections of structs that are stored in a binary buffer and that can be 
 			t.test('should support writing and reading to individual keys', function (t) {
 				entity.resources.hunger = 1000;
 				entity.resources.eyes = 3;
-				entity.resources.relativePinkness = -35.4;
+				entity.resources.relativePinkness = -35.25;
+
+				t.equal(entity.resources.hunger, 1000);
+				t.equal(entity.resources.eyes, 3);
+				t.equal(entity.resources.relativePinkness, -35.25);
+				t.end();
 			});
 
 		});

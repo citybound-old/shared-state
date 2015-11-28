@@ -106,4 +106,15 @@ console.log(testEntity.resources.age);
 console.log(testEntity.resources.stress);
 console.log(testEntity.resources.hunger);
 
+testEntity.resources.hunger += 100;
+
+console.log(testEntity.resources.hunger);
+
 testEntity.resources.eyes = 3;
+
+console.log("after setting eyes")
+
+console.log(testEntity.resources.age);
+console.log(testEntity.resources.stress);
+console.log(testEntity.resources.hunger);
+console.log(testEntity.resources.eyes);

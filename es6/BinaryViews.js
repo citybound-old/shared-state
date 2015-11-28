@@ -37,24 +37,27 @@ export default function View (type) {
 	const typeName = type.type || type;
 
 	const views = {
-		Int8: primitiveTypeView,
-		UInt8: primitiveTypeView,
-		Int16LE: primitiveTypeView,
-		Int16BE: primitiveTypeView,
-		UInt16LE: primitiveTypeView,
-		UInt16BE: primitiveTypeView,
-		Int32LE: primitiveTypeView,
-		Int32BE: primitiveTypeView,
-		UInt32LE: primitiveTypeView,
-		UInt32BE: primitiveTypeView,
-		FloatLE: primitiveTypeView,
-		FloatBE: primitiveTypeView,
-		DoubleLE: primitiveTypeView,
-		DoubleBE: primitiveTypeView,
+		Int8: primitiveNumberView,
+		UInt8: primitiveNumberView,
+		Int16LE: primitiveNumberView,
+		Int16BE: primitiveNumberView,
+		UInt16LE: primitiveNumberView,
+		UInt16BE: primitiveNumberView,
+		Int32LE: primitiveNumberView,
+		Int32BE: primitiveNumberView,
+		UInt32LE: primitiveNumberView,
+		UInt32BE: primitiveNumberView,
+		FloatLE: primitiveNumberView,
+		FloatBE: primitiveNumberView,
+		DoubleLE: primitiveNumberView,
+		DoubleBE: primitiveNumberView,
 		Bool: type => ({
 			read: (output, offset, buffer) => [
 				...View('Int8').read(
 				`${output}!!`, offset, buffer)
+			],
+			default: (output) => [
+				`${output}false`
 			],
 			write: (input, offset, buffer) => [
 				...View('Int8').write(
@@ -67,6 +70,7 @@ export default function View (type) {
 				'const index = ', offset, buffer),
 				`${output}${prefix}EnumOptions[index]`
 			],
+			default: (output, prefix) => [`${output}${prefix}EnumOptions[0]`],
 			write: (input, offset, buffer, prefix) => [
 				`const index = ${prefix}EnumOptions.indexOf(${input});`,
 				...View('Int8').write('index', offset, buffer)
@@ -81,6 +85,14 @@ export default function View (type) {
 				`for (let i = 0, itemOffset = 0; i < ${type.dimension}; i++, itemOffset += ${byteSize(type.items)}) {`,
 				...t(View(type.items).read(
 					'vector[i] = ', `${offset} + itemOffset`, buffer, prefix + 'Item')),
+				`}`,
+				`${output}vector`
+			],
+			default: (prefix) => [
+				`const vector = new Array(${type.dimension})`,
+				`for (let i = 0, itemOffset = 0; i < ${type.dimension}; i++, itemOffset += ${byteSize(type.items)}) {`,
+				...t(View(type.items).default(
+				    'vector[i] = ', prefix)),
 				`}`,
 				`${output}vector`
 			],
@@ -102,6 +114,9 @@ export default function View (type) {
 				`} else {`,
 				`   ${output}undefined;`,
 				'}'
+			],
+			default: (output, prefix) => [
+				`${output}undefined`
 			],
 			write: (input, offset, buffer) => [
 				`if (${input}) {`,
@@ -128,6 +143,9 @@ export default function View (type) {
 				`} else {`,
 				`	${output}undefined;`,
 				`}`
+			],
+			default: (output, prefix) => [
+				`${output}undefined`
 			],
 			write: (input, offset, buffer) => [
 				...View('UInt32LE').read(
@@ -174,10 +192,13 @@ export default function View (type) {
 				`   const nKeys = givenPairsByteSize / keyValueByteSize;`,
 				`   const heapBuffer = ${type.heap}.getBuffer(index, givenPairsByteSize);`,
 				`   const heapOffset = ${type.heap}.getOffset(index, givenPairsByteSize);`,
-				`   return new ${prefix}MapProxy(heapOffset, heapBuffer, nKeys);`,
+				`   return new ${prefix}MapProxy(${offset}, ${buffer}, heapOffset, heapBuffer, nKeys);`,
 				`} else {`,
-				`   return new ${prefix}MapProxy(null, null, 0);`,
+				`   return new ${prefix}MapProxy(${offset}, ${buffer}, null, null, 0);`,
 				`}`
+			],
+			default: (output, prefix) => [
+				`${output}{} /* TODO: maybe invent something better */`
 			],
 			write: (input, offset, buffer, prefix) => [
 				...View('UInt32LE').read(
@@ -221,22 +242,73 @@ export default function View (type) {
 				`const ${prefix}Keys = ${JSON.stringify(type.keys)}`,
 				``,
 				`class ${prefix}MapProxy {`,
-				`   constructor (offset, buffer, nKeys) {`,
+				`   constructor (offset, buffer, heapOffset, heapBuffer, nKeys, addKey) {`,
 				`      this._offset = offset;`,
 				`      this._buffer = buffer;`,
+				`      this._heapOffset = heapOffset;`,
+				`      this._heapBuffer = heapBuffer;`,
 				`      this._nKeys = nKeys;`,
+				`      this._addKey = addKey;`,
 				`   }`,
 				...flatten(type.keys.map((key, keyIndex) => [
 				`   get ${key} () {`,
 				`      const keyValueByteSize = (1 + ${byteSize(type.values)});`,
 				`      for (var i = 0, keyOffset = 0; i < this._nKeys; i++, keyOffset += keyValueByteSize) {`,
 				...(t(t(t(View('UInt8').read(
-						  'const keyIndex = ', 'this._offset + keyOffset', 'this._buffer'))))),
-				`         if (keyIndex === ${keyIndex}) {`,
+						  'const keyIndex = ', 'this._heapOffset + keyOffset', 'this._heapBuffer'))))),
+				`         if (keyIndex === ${keyIndex} /* ${key} */) {`,
 				...(t(t(t(t(View(type.values).read(
-						     'return ', 'this._offset + keyOffset + 1', 'this._buffer')))))),
+						     'return ', 'this._heapOffset + keyOffset + 1', 'this._heapBuffer')))))),
 				`         }`,
 				`      }`,
+				...t(t(View(type.values).default(
+						'return ', prefix))),
+				`   }`,
+				`   `,
+				`   set ${key} (value) {`,
+				`      const keyValueByteSize = (1 + ${byteSize(type.values)});`,
+				`      if (this._nKeys > 0) {`,
+				`         for (var i = 0, keyOffset = 0; i < this._nKeys; i++, keyOffset += keyValueByteSize) {`,
+				...(t(t(t(t((View('UInt8').read(
+						     'const keyIndex = ', 'this._heapOffset + keyOffset', 'this._heapBuffer'))))))),
+				`            if (keyIndex === ${keyIndex} /* ${key} */) {`,
+				...(t(t(t(t(t((View(type.values).write(
+							    'value', 'this._heapOffset + keyOffset + 1', 'this._heapBuffer')))))))),
+				`               return;`,
+				`            }`,
+				`         }`,
+				`      }`,
+				`      // this key is not allocated yet`,
+				`      // allocate larger buffer in heap, copy old values`,
+				`      const oldGivenPairsByteSize = this._nKeys * keyValueByteSize;`,
+				`      const newGivenPairsByteSize = (this._nKeys + 1) * keyValueByteSize;`,
+				`      const newIndex = ${type.heap}.allocate(newGivenPairsByteSize);`,
+				`      const newHeapBuffer = ${type.heap}.getBuffer(newIndex, newGivenPairsByteSize);`,
+				`      const newHeapOffset = ${type.heap}.getOffset(newIndex, newGivenPairsByteSize);`,
+				`      if (this._nKeys > 0) {`,
+				`         this._heapBuffer.copy(newHeapBuffer, newHeapOffset, this._heapOffset, oldGivenPairsByteSize);`,
+				`      }`,
+				`      // add new value`,
+				...t(t(View('UInt8').write(
+						`${keyIndex} /* ${key} */`, `newHeapOffset + oldGivenPairsByteSize`, 'newHeapBuffer'))),
+				...t(t(View(type.values).write(
+						'value', `newHeapOffset + oldGivenPairsByteSize + 1`, 'newHeapBuffer'))),
+				`      `,
+				`      if (this._nKeys > 0) {`,
+				`         // free old heap buffer`,
+				...t(t(t(View('UInt32LE').read(
+						  'const oldPointer = ', 'this._offset', 'this._buffer')))),
+				`         const oldIndex = ${pointerToIndex('oldPointer')};`,
+				`         ${type.heap}.free(oldIndex, oldGivenPairsByteSize);`,
+				`      }`,
+				`      // point map (& Proxy) to new heap buffer`,
+				...t(t(View('UInt32LE').write(
+						indexToPointer('newIndex'), 'this._offset', 'this._buffer'))),
+				...t(t(View('UInt32LE').write(
+						'newGivenPairsByteSize', 'this._offset + 4', 'this._buffer'))),
+				`      this._heapBuffer = newHeapBuffer;`,
+				`      this._heapOffset = newHeapOffset;`,
+				`      this._nKeys += 1;`,
 				`   }`
 				])),
 				`}`
@@ -245,6 +317,9 @@ export default function View (type) {
 		Struct: type => ({
 			read: (output, offset, buffer, prefix) => [
 				`${output}new ${prefix}StructProxy(${offset}, ${buffer})`
+			],
+			default: (output, prefix) => [
+				`${output}{} /* TODO: maybe invent something better */`
 			],
 			write: (input, offset, buffer, prefix) =>
 				flatten(mapWithIncreasingOffset(type.entries, ([name, entryType], entryOffset) => [
@@ -296,9 +371,10 @@ export default function View (type) {
 	return views[typeName](type);
 }
 
-function primitiveTypeView (primitiveType) {
+function primitiveNumberView (primitiveType) {
 	return {
 		read: (output, offset, buffer) => [`${output}${buffer}.read${primitiveType}(${offset})`],
+		default: (output) => [`${output}0`],
 		write: (input, offset, buffer) => [`${buffer}.write${primitiveType}(${input}, ${offset})`]
 	}
 }

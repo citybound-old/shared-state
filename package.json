@@ -20,7 +20,7 @@
     "tape": "^4.2.2"
   },
   "scripts": {
-    "test": "node --harmony test.js | tap-spec || true"
+    "test": "node --harmony test.js | tap-spec"
   },
   "keywords": [],
   "repository": {
