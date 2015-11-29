@@ -31,7 +31,7 @@ Using a simple entity stored in a buffer:
 // Create a simple proxy entity class
 import {BinaryProxy} from 'shared-state'
 
-const struct = {
+const schema = {
     type: 'Struct',
     entries: [
         ['number', 'UInt8'],
