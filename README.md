@@ -43,7 +43,7 @@ const struct = {
     ]
 };
 
-const SimpleEntity = BinaryProxy.fromStruct(schema);
+const SimpleEntity = BinaryProxy.fromStruct(struct);
 
 // Create a buffer for one entity and get an instance of the proxy class as a view on the buffer.
 
