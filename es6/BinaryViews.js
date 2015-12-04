@@ -21,6 +21,7 @@ export function byteSize (type) {
 		Enum: () => 1,
 		Vector: (({dimension, items}) => dimension * byteSize(items)),
 		Reference: () => byteSize('UInt32LE'),
+		CollectionReference: () => byteSize('UInt32LE'),
 		DynamicPacked: () => 2 * byteSize('UInt32LE'),
 		StaticMap: (({keys, values}) => keys.length * byteSize(values)),
 		DynamicMap: () => 2 * byteSize('UInt32LE'),
@@ -120,12 +121,45 @@ export default function View (type) {
 			],
 			write: (input, offset, buffer) => [
 				`if (${input}) {`,
-				`   const id = ${type.toId}(${input});`,
+				`   const id = ${type.toId || `(entity => entity.id)`}(${input});`,
 				...t(View('UInt32LE').write(
 					indexToPointer('id'), offset, buffer)),
 				`} else {`,
 				...t(View('UInt32LE').write(
 					invalidPointer(), offset, buffer)),
+				`}`
+			]
+		}),
+		CollectionReference: type => ({
+			read: (output, offset, buffer, prefix) => [
+				...View('UInt32LE').read(
+						'const pointer = ', offset, buffer),
+				`if (${pointerValid('pointer')}) {`,
+				`   const id = ${pointerToIndex('pointer')}`,
+				`   if (!this.${prefix}Cursor) {`,
+				`       this.${prefix}Cursor = ${type.collection}.cursor();`,
+				`   }`,
+				`   ${type.collection}.load(id, this.${prefix}Cursor);`,
+				`   ${output}this.${prefix}Cursor;`,
+				`} else {`,
+				`   ${output}undefined;`,
+				'}'
+			],
+			default: (output, prefix) => [
+				`${output}undefined`
+			],
+			write: (input, offset, buffer) => [
+				`if (${input}) {`,
+				`   if (typeof ${input} === 'number') {`,
+				...t(t(View('UInt32LE').write(
+						indexToPointer(input), offset, buffer))),
+				`   } else {`,
+				...t(t(View('UInt32LE').write(
+						indexToPointer(`${input}.id`), offset, buffer))),
+				`   }`,
+				`} else {`,
+				...t(View('UInt32LE').write(
+						invalidPointer(), offset, buffer)),
 				`}`
 			]
 		}),
@@ -334,7 +368,13 @@ export default function View (type) {
 				`class ${prefix}StructProxy {`,
 				`   constructor(offset, buffer) {`,
 				`      this._offset = offset;`,
-				`      this._buffer = buffer;`,
+				`      if (buffer) {`,
+				`         this._buffer = buffer;`,
+				`      } else {`,
+				`         this._offset = 0;`,
+				`         this._buffer = new Buffer(${byteSize(type)});`,
+				`         this._buffer.fill(0)`,
+				`      }`,
 				`   }`,
 				`   `,
 				`   static byteSize = ${byteSize(type)};`,

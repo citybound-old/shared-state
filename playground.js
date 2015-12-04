@@ -1,5 +1,5 @@
 require("babel-core/register");
-const EntityProxy = require("./es6/EntityProxy");
+const EntityCollection = require("./es6/EntityCollection");
 const View = require("./es6/BinaryViews");
 const RecordBuffer = require('./es6/RecordBuffer');
 const Heap = require('./es6/Heap');
@@ -17,47 +17,14 @@ const struct = {
 			packer: 'NumberListPacker',
 			heap: 'NumberListHeap'
 		}],
-		['ratings', {
-			type: 'Vector',
-			dimension: 3,
-			items: {
-				type: 'Enum',
-				options: ['good', 'medium', 'bad']
-			}
-		}],
-		['birthdays', {
-			type: 'Vector',
-			dimension: 5,
-			items: {
-				type: 'Struct',
-				entries: [
-					['day', 'UInt8'],
-					['month', 'UInt8'],
-					['year', 'Int16LE']
-				]
-			}
-		}],
-		['car', {
-			type: 'Reference',
-			fromId: 'carFromId',
-			toId: 'carToId'
-		}],
-		['stuff', {
-			type: 'StaticMap',
-			keys: ['time', 'money', 'coffee'],
-			values: 'FloatLE'
-		}],
-		['resources', {
-			type: 'DynamicMap',
-			keys: ['age', 'freetime', 'stress', 'hunger', 'thirst', 'health', 'edges', 'eyes', 'pylons', 'smell', 'relativePinkness'],
-			values: 'FloatLE',
-			heap: 'ResourcesHeap'
+		['next', {
+			type: 'CollectionReference',
+			collection: 'stuffCollection'
 		}]
 	]
 };
 
 global.NumberListHeap = new Heap(RecordBuffer);
-global.ResourcesHeap = new Heap(RecordBuffer);
 
 global.NumberListPacker = {
 	byteSize: (arrayOfNumbers) => arrayOfNumbers.length,
@@ -76,45 +43,66 @@ global.NumberListPacker = {
 	}
 };
 
-global.carFromId = function (id) {
-	return {id: id, otherProp: 'something'};
-};
-global.carToId = function (car) {
-	return car.id;
-};
+global.stuffCollection = new EntityCollection(struct, 'TestCollection', {
+	testProperty: 5,
+	testFunction () {
+		console.log("additional prop yaay!!");
+		console.log("some binary data in me:", this.color);
+	}
+});
+const first = stuffCollection.cursor();
 
-const TestProxy = EntityProxy.fromStruct(struct, "Test");
+stuffCollection.allocate();
+stuffCollection.allocate();
+stuffCollection.allocate();
 
-const buffer = new Buffer(TestProxy.byteSize);
-buffer.fill(0);
+const id = stuffCollection.allocate();
+stuffCollection.load(id, first);
 
-var testEntity = new TestProxy(0, buffer);
+console.log(first.id);
+console.log(first.number);
+console.log(first.color);
+console.log(first.listOfNumbers);
+console.log(first.testProperty);
+first.testFunction();
 
-console.log(testEntity.number);
-console.log(testEntity.color);
-console.log(testEntity.listOfNumbers);
-console.log(testEntity.ratings);
-console.log(testEntity.birthdays[1].day);
+const nextId = stuffCollection.allocate();
+first.next = nextId;
 
-testEntity.resources = {
-	age: 15,
-	stress: 0,
-	hunger: 1000
-};
+console.log(first.next.color);
 
-console.log(testEntity.resources.age);
-console.log(testEntity.resources.stress);
-console.log(testEntity.resources.hunger);
-
-testEntity.resources.hunger += 100;
-
-console.log(testEntity.resources.hunger);
-
-testEntity.resources.eyes = 3;
-
-console.log("after setting eyes")
-
-console.log(testEntity.resources.age);
-console.log(testEntity.resources.stress);
-console.log(testEntity.resources.hunger);
-console.log(testEntity.resources.eyes);
+//const next = stuffCollection.cursor();
+//const nextId = stuffCollection.allocate();
+//stuffCollection.get(nextId, next);
+//
+//next.number = 11;
+//console.log(next.number);
+//
+//first.next = next;
+//
+//console.log(first.next.number);
+//
+//first.next.number = 6;
+//console.log(first.next.number);
+//
+//console.log(global.stuffCollection.cursors.length);
+//
+//console.log(first.id);
+//
+//stuffCollection.allocate();
+//stuffCollection.allocate();
+//stuffCollection.allocate();
+//stuffCollection.allocate();
+//stuffCollection.allocate();
+////stuffCollection.free(next.id);
+//stuffCollection.allocate();
+//stuffCollection.allocate();
+//stuffCollection.allocate();
+////stuffCollection.free(first.id);
+//stuffCollection.allocate();
+//
+//console.log("----");
+//
+//stuffCollection.iterate(cursor =>
+//	console.log(cursor.id)
+//);
