@@ -189,7 +189,7 @@ test('Collections of structs that are stored in a binary buffer and that can be 
 				['position', {
 					type: 'Vector',
 					dimension: 3,
-					items: 'FloatLE'
+					items: 'Float'
 				}],
 				['colorCombo', {
 					type: 'Vector',
@@ -264,7 +264,7 @@ test('Collections of structs that are stored in a binary buffer and that can be 
 					['resources', {
 						type: 'StaticMap',
 						keys: ['money', 'time', 'coffee'],
-						values: 'FloatLE'
+						values: 'Float'
 					}]
 				]
 			};
@@ -331,7 +331,7 @@ test('Collections of structs that are stored in a binary buffer and that can be 
 					['resources', {
 						type: 'DynamicMap',
 						keys: ['age', 'freetime', 'stress', 'hunger', 'thirst', 'health', 'edges', 'eyes', 'pylons', 'smell', 'relativePinkness'],
-						values: 'FloatLE',
+						values: 'Float',
 						heap: 'resourcesHeap'
 					}]
 				]

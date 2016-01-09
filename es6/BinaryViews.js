@@ -5,26 +5,20 @@ export function byteSize (type) {
 	const sizes = {
 		Int8: () => 1,
 		UInt8: () => 1,
-		Int16LE: () => 2,
-		Int16BE: () => 2,
-		UInt16LE: () => 2,
-		UInt16BE: () => 2,
-		Int32LE: () => 4,
-		Int32BE: () => 4,
-		UInt32LE: () => 4,
-		UInt32BE: () => 4,
-		FloatLE: () => 4,
-		FloatBE: () => 4,
-		DoubleLE: () => 8,
-		DoubleBE: () => 8,
+		Int16: () => 2,
+		UInt16: () => 2,
+		Int32: () => 4,
+		UInt32: () => 4,
+		Float: () => 4,
+		Double: () => 8,
 		Bool: () => 1,
 		Enum: () => 1,
 		Vector: (({dimension, items}) => dimension * byteSize(items)),
-		Reference: () => byteSize('UInt32LE'),
-		CollectionReference: () => byteSize('UInt32LE'),
-		DynamicPacked: () => 2 * byteSize('UInt32LE'),
+		Reference: () => byteSize('UInt32'),
+		CollectionReference: () => byteSize('UInt32'),
+		DynamicPacked: () => 2 * byteSize('UInt32'),
 		StaticMap: (({keys, values}) => keys.length * byteSize(values)),
-		DynamicMap: () => 2 * byteSize('UInt32LE'),
+		DynamicMap: () => 2 * byteSize('UInt32'),
 		Struct: ({entries}) => entries.reduce((sum, [name, entryType]) => sum + byteSize(entryType), 0)
 	};
 
@@ -40,18 +34,12 @@ export default function View (type) {
 	const views = {
 		Int8: primitiveNumberView,
 		UInt8: primitiveNumberView,
-		Int16LE: primitiveNumberView,
-		Int16BE: primitiveNumberView,
-		UInt16LE: primitiveNumberView,
-		UInt16BE: primitiveNumberView,
-		Int32LE: primitiveNumberView,
-		Int32BE: primitiveNumberView,
-		UInt32LE: primitiveNumberView,
-		UInt32BE: primitiveNumberView,
-		FloatLE: primitiveNumberView,
-		FloatBE: primitiveNumberView,
-		DoubleLE: primitiveNumberView,
-		DoubleBE: primitiveNumberView,
+		Int16: multibytePrimitiveNumberView,
+		UInt16: multibytePrimitiveNumberView,
+		Int32: multibytePrimitiveNumberView,
+		UInt32: multibytePrimitiveNumberView,
+		Float: multibytePrimitiveNumberView,
+		Double: multibytePrimitiveNumberView,
 		Bool: type => ({
 			read: (output, offset, buffer) => [
 				...View('Int8').read(
@@ -107,7 +95,7 @@ export default function View (type) {
 		}),
 		Reference: type => ({
 			read: (output, offset, buffer) => [
-				...View('UInt32LE').read(
+				...View('UInt32').read(
 				'const pointer = ', offset, buffer),
 				`if (${pointerValid('pointer')}) {`,
 				`   const id = ${pointerToIndex('pointer')}`,
@@ -122,17 +110,17 @@ export default function View (type) {
 			write: (input, offset, buffer) => [
 				`if (${input}) {`,
 				`   const id = ${type.toId || `(entity => entity.id)`}(${input});`,
-				...t(View('UInt32LE').write(
+				...t(View('UInt32').write(
 					indexToPointer('id'), offset, buffer)),
 				`} else {`,
-				...t(View('UInt32LE').write(
+				...t(View('UInt32').write(
 					invalidPointer(), offset, buffer)),
 				`}`
 			]
 		}),
 		CollectionReference: type => ({
 			read: (output, offset, buffer, prefix) => [
-				...View('UInt32LE').read(
+				...View('UInt32').read(
 						'const pointer = ', offset, buffer),
 				`if (${pointerValid('pointer')}) {`,
 				`   const id = ${pointerToIndex('pointer')}`,
@@ -151,25 +139,25 @@ export default function View (type) {
 			write: (input, offset, buffer) => [
 				`if (${input}) {`,
 				`   if (typeof ${input} === 'number') {`,
-				...t(t(View('UInt32LE').write(
+				...t(t(View('UInt32').write(
 						indexToPointer(input), offset, buffer))),
 				`   } else {`,
-				...t(t(View('UInt32LE').write(
+				...t(t(View('UInt32').write(
 						indexToPointer(`${input}.id`), offset, buffer))),
 				`   }`,
 				`} else {`,
-				...t(View('UInt32LE').write(
+				...t(View('UInt32').write(
 						invalidPointer(), offset, buffer)),
 				`}`
 			]
 		}),
 		DynamicPacked: type => ({
 			read: (output, offset, buffer) => [
-				...View('UInt32LE').read(
+				...View('UInt32').read(
 				'const pointer = ', offset, buffer),
 				`if (${pointerValid('pointer')}) {`,
 				`   const index = ${pointerToIndex('pointer')};`,
-				...t(View('UInt32LE').read(
+				...t(View('UInt32').read(
 				   'const byteSize = ', offset + ' + 4', buffer)),
 				`   const buffer = ${type.heap}.getBuffer(index, byteSize);`,
 				`   const offset = ${type.heap}.getOffset(index, byteSize);`,
@@ -182,11 +170,11 @@ export default function View (type) {
 				`${output}undefined`
 			],
 			write: (input, offset, buffer) => [
-				...View('UInt32LE').read(
+				...View('UInt32').read(
 				'const oldPointer = ', offset, buffer),
 				`if (${pointerValid('oldPointer')}) {`,
 				`   const oldIndex = ${pointerToIndex('oldPointer')};`,
-				...t(View('UInt32LE').read(
+				...t(View('UInt32').read(
 					'const oldByteSize = ', offset + ' + 4', buffer)),
 				`   ${type.heap}.free(oldIndex, oldByteSize)`,
 				`}`,
@@ -198,12 +186,12 @@ export default function View (type) {
 				`   const buffer = ${type.heap}.getBuffer(index, byteSize);`,
 				`   const offset = ${type.heap}.getOffset(index, byteSize);`,
 				`   ${type.packer}.pack(${input}, offset, buffer);`,
-				...t(View('UInt32LE').write(
+				...t(View('UInt32').write(
 					indexToPointer('index'), offset, buffer)),
-				...t(View('UInt32LE').write(
+				...t(View('UInt32').write(
 					'byteSize', offset + ' + 4', buffer)),
 				`} else {`,
-				...t(View('UInt32LE').write(
+				...t(View('UInt32').write(
 					invalidPointer(), offset, buffer)),
 				`}`
 			]
@@ -216,11 +204,11 @@ export default function View (type) {
 		}),
 		DynamicMap: type => ({
 			read: (output, offset, buffer, prefix) => [
-				...View('UInt32LE').read(
+				...View('UInt32').read(
 				'const pointer = ', offset, buffer),
 				`if (${pointerValid('pointer')}) {`,
 				`   const index = ${pointerToIndex('pointer')};`,
-				...t(View('UInt32LE').read(
+				...t(View('UInt32').read(
 					'const givenPairsByteSize = ', offset + ' + 4', buffer)),
 				`   const keyValueByteSize = (1 + ${byteSize(type.values)});`,
 				`   const nKeys = givenPairsByteSize / keyValueByteSize;`,
@@ -235,11 +223,11 @@ export default function View (type) {
 				`${output}{} /* TODO: maybe invent something better */`
 			],
 			write: (input, offset, buffer, prefix) => [
-				...View('UInt32LE').read(
+				...View('UInt32').read(
 				'const oldPointer = ', offset, buffer),
 				`if (${pointerValid('oldPointer')}) {`,
 				`   const oldIndex = ${pointerToIndex('oldPointer')};`,
-				...t(View('UInt32LE').read(
+				...t(View('UInt32').read(
 					'const oldByteSize = ', offset + ' + 4', buffer)),
 				`   ${type.heap}.free(oldIndex, oldByteSize)`,
 				`}`,
@@ -262,12 +250,12 @@ export default function View (type) {
 						'valueAtKey', `heapOffset + keyOffset + 1`, 'heapBuffer'))),
 				`   }`,
 				`   `,
-				...t(View('UInt32LE').write(
+				...t(View('UInt32').write(
 						indexToPointer('index'), offset, buffer)),
-				...t(View('UInt32LE').write(
+				...t(View('UInt32').write(
 						'givenPairsByteSize', offset + ' + 4', buffer)),
 				`} else {`,
-				...t(View('UInt32LE').write(
+				...t(View('UInt32').write(
 					invalidPointer(), offset, buffer)),
 				`}`
 
@@ -330,15 +318,15 @@ export default function View (type) {
 				`      `,
 				`      if (this._nKeys > 0) {`,
 				`         // free old heap buffer`,
-				...t(t(t(View('UInt32LE').read(
+				...t(t(t(View('UInt32').read(
 						  'const oldPointer = ', 'this._offset', 'this._buffer')))),
 				`         const oldIndex = ${pointerToIndex('oldPointer')};`,
 				`         ${type.heap}.free(oldIndex, oldGivenPairsByteSize);`,
 				`      }`,
 				`      // point map (& Proxy) to new heap buffer`,
-				...t(t(View('UInt32LE').write(
+				...t(t(View('UInt32').write(
 						indexToPointer('newIndex'), 'this._offset', 'this._buffer'))),
-				...t(t(View('UInt32LE').write(
+				...t(t(View('UInt32').write(
 						'newGivenPairsByteSize', 'this._offset + 4', 'this._buffer'))),
 				`      this._heapBuffer = newHeapBuffer;`,
 				`      this._heapOffset = newHeapOffset;`,
@@ -417,6 +405,10 @@ function primitiveNumberView (primitiveType) {
 		default: (output) => [`${output}0`],
 		write: (input, offset, buffer) => [`${buffer}.write${primitiveType}(${input}, ${offset})`]
 	}
+}
+
+function multibytePrimitiveNumberView (primitiveType) {
+	return primitiveNumberView(primitiveType + "LE");
 }
 
 function t (lines) {
